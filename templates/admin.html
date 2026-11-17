@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EMRS Quiz Competition - Host & Admin Console</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="top-header">
+    <div class="header-brand">
+      <div class="header-logo">Q</div>
+      <div class="header-title">
+        <h1>EMRS QUIZ MASTER CONSOLE</h1>
+        <p>Authoritative Host & Adjudication Controller &bull; LAN Server</p>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+      <div style="background:#1e293b; padding:0.4rem 0.85rem; border-radius:6px; border:1px solid #334155; font-size:0.85rem;">
+        <span style="color:#94a3b8;">Student URL:</span>
+        <strong style="color:#38bdf8; font-family:monospace;">http://{{ lan_ip }}:{{ port }}/</strong>
+      </div>
+      <span id="admin-ws-status" class="badge badge-green">ONLINE</span>
+      <a href="/projector" target="_blank" class="btn btn-primary" style="padding:0.45rem 0.9rem; font-size:0.85rem;">
+        Open Projector View ↗
+      </a>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Live Anti-Cheat Security Toast Alert -->
+    <div id="admin-security-alert" style="display:none; background:#7f1d1d; border:2px solid #ef4444; border-radius:8px; padding:0.85rem 1.25rem; margin-bottom:1rem; color:#fecaca; font-weight:700; display:flex; justify-content:space-between; align-items:center; box-shadow:0 10px 20px rgba(0,0,0,0.4); animation:pulse-red 1s infinite;">
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <span style="font-size:1.4rem;">&#9888;</span>
+        <span id="admin-security-msg">Security Violation Alert</span>
+      </div>
+      <button class="btn btn-secondary" style="padding:0.25rem 0.6rem; font-size:0.75rem;" onclick="document.getElementById('admin-security-alert').style.display='none'">Dismiss</button>
+    </div>
+
+    <!-- Admin Tabs -->
+    <nav class="admin-tabs">
+      <button class="tab-btn active" data-tab="tab-final">&#9889; Final Round Console</button>
+      <button class="tab-btn" data-tab="tab-qualifier">&#128202; Qualifier Monitor</button>
+      <button class="tab-btn" data-tab="tab-finalists">&#127942; Finalists Selection</button>
+      <button class="tab-btn" data-tab="tab-questions" id="nav-tab-questions" style="font-weight:800; border:1.5px solid #38bdf8; color:#38bdf8;">&#128218; Question Bank (Filter & View)</button>
+      <button class="tab-btn" data-tab="tab-teams">&#128101; Teams & Lab PCs</button>
+      <button class="tab-btn" data-tab="tab-audit">&#128220; Score Ledger & Audit</button>
+      <button class="tab-btn" data-tab="tab-reports">&#128190; Reports & Recovery</button>
+    </nav>
+
+    <!-- TAB 1: FINAL ROUND CONSOLE -->
+    <section id="tab-final" class="tab-content active">
+      <div style="display:grid; grid-template-columns:1fr 340px; gap:1.5rem;">
+        
+        <!-- Left: Question & Adjudication -->
+        <div>
+          <!-- Active Turn Spotlight -->
+          <div class="card" style="border-left:5px solid #6366f1; margin-bottom:1.25rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+              <span id="console-turn-badge" class="badge badge-blue">MAIN TURN (60s)</span>
+              <span id="console-rotation-origin" style="font-size:0.8rem; color:#94a3b8; font-weight:600;">Origin: T1</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:0.85rem; color:#94a3b8; font-weight:600;">ACTIVE TEAM OPPORTUNITY</div>
+                <div id="console-active-team" style="font-size:1.8rem; font-weight:800; color:#38bdf8;">[T1] Team Birsa Munda</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:0.85rem; color:#94a3b8; font-weight:600;">TIME REMAINING</div>
+                <div id="console-timer-val" style="font-size:2.4rem; font-weight:900; font-family:monospace; color:#f59e0b;">60s</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Question Card with Answer Key -->
+          <div class="card" style="margin-bottom:1.25rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <h3 id="console-q-title" style="font-size:1.15rem; color:#f8fafc;">Question 1: Category</h3>
+              <div style="display:flex; gap:0.5rem;">
+                <button id="btn-prev-q" class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.85rem;" onclick="navigateQuestion(-1)">&larr; Prev [B]</button>
+                <button id="btn-next-q" class="btn btn-secondary" style="padding:0.35rem 0.75rem; font-size:0.85rem;" onclick="navigateQuestion(1)">Next [N] &rarr;</button>
+              </div>
+            </div>
+
+            <!-- 5 Competition Rounds Selector Bar -->
+            <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.65rem 0.85rem; margin-bottom:0.85rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
+              <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+                <span style="font-size:0.75rem; text-transform:uppercase; font-weight:800; color:#38bdf8; letter-spacing:0.04em;">Stage Round:</span>
+                <button type="button" class="btn btn-secondary admin-round-btn" id="btn-admin-round-1" onclick="loadAdminRound(1)" style="padding:0.3rem 0.65rem; font-size:0.8rem; font-weight:800;">🎭 1. Culture</button>
+                <button type="button" class="btn btn-secondary admin-round-btn" id="btn-admin-round-2" onclick="loadAdminRound(2)" style="padding:0.3rem 0.65rem; font-size:0.8rem; font-weight:800;">🏛️ 2. Heritage</button>
+                <button type="button" class="btn btn-secondary admin-round-btn" id="btn-admin-round-3" onclick="loadAdminRound(3)" style="padding:0.3rem 0.65rem; font-size:0.8rem; font-weight:800;">🏹 3. Tribal</button>
+                <button type="button" class="btn btn-secondary admin-round-btn" id="btn-admin-round-4" onclick="loadAdminRound(4)" style="padding:0.3rem 0.65rem; font-size:0.8rem; font-weight:800;">🎵 4. Audio</button>
+                <button type="button" class="btn btn-secondary admin-round-btn" id="btn-admin-round-5" onclick="loadAdminRound(5)" style="padding:0.3rem 0.65rem; font-size:0.8rem; font-weight:800;">🖼️ 5. Visual</button>
+              </div>
+              <div style="display:flex; align-items:center; gap:0.5rem;">
+                <select id="console-jump-question" onchange="onConsoleQuestionJump(this.value)" style="padding:0.35rem 0.6rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; font-size:0.8rem; max-width:240px; cursor:pointer;">
+                  <option value="">Jump to Question...</option>
+                </select>
+                <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.65rem; border:1px solid #38bdf8; color:#38bdf8;" onclick="switchAdminTab('tab-questions')">
+                  📚 Question Bank &rarr;
+                </button>
+                <button type="button" class="btn btn-primary" style="font-size:0.8rem; padding:0.35rem 0.65rem; font-weight:700;" onclick="openAddQuestionModal()">
+                  + Add Question
+                </button>
+              </div>
+            </div>
+
+            <!-- Projector Screen Display Status & Reveal Control Bar -->
+            <div style="background:#0f172a; border:2px solid #3b82f6; border-radius:8px; padding:0.85rem 1rem; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+              <div>
+                <span style="font-size:0.75rem; text-transform:uppercase; font-weight:800; color:#94a3b8; letter-spacing:0.05em;">Projector Screen Display Status:</span>
+                <div id="console-visibility-status" style="font-size:1.05rem; font-weight:800; color:#f59e0b; margin-top:0.2rem;">
+                  &#128274; Hidden on Projector Screen
+                </div>
+              </div>
+              <div style="display:flex; gap:0.5rem; align-items:center;">
+                <button id="btn-show-question" class="btn btn-success" style="font-size:0.95rem; font-weight:800; padding:0.6rem 1.25rem; box-shadow:0 0 15px rgba(16, 185, 129, 0.4);" onclick="revealQuestionOnProjector()">
+                  &#128065;&#65039; Show Question on Screen (Starts 60s Timer) [S]
+                </button>
+                <button id="btn-hide-question" class="btn btn-secondary" style="font-size:0.85rem; padding:0.6rem 1rem; display:none;" onclick="hideQuestionOnProjector()">
+                  &#128274; Hide from Screen
+                </button>
+              </div>
+            </div>
+
+            <p id="console-q-text" style="font-size:1.25rem; font-weight:600; line-height:1.4; margin-bottom:1rem; color:#ffffff;">Loading question text...</p>
+            <div id="console-q-media-preview" style="margin-bottom:1rem; display:none;"></div>
+            <div id="console-options-list" style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.75rem;"></div>
+            <div id="console-q-explanation" style="font-size:0.85rem; color:#94a3b8; padding:0.5rem 0.75rem; background:#1e293b; border-radius:4px; display:none;"></div>
+          </div>
+
+          <!-- Hot Adjudication Action Center -->
+          <div class="card">
+            <h4 style="font-size:0.9rem; text-transform:uppercase; color:#94a3b8; margin-bottom:0.75rem; font-weight:700;">
+              HOST ADJUDICATION CONTROLS (Single-Click or Keyboard)
+            </h4>
+            <div class="adjudication-bar">
+              <!-- Correct -->
+              <button class="action-card-btn btn-adj-correct" onclick="adjudicate('correct')">
+                <span>&#10004; CORRECT (+5)</span>
+                <span class="shortcut-hint">Key: C or 1</span>
+              </button>
+              <!-- Incorrect -->
+              <button class="action-card-btn btn-adj-wrong" onclick="adjudicate('incorrect')">
+                <span>&#10008; INCORRECT</span>
+                <span class="shortcut-hint">Key: X or 2 (Ends Q)</span>
+              </button>
+              <!-- Pass / Timeout -->
+              <button class="action-card-btn btn-adj-pass" onclick="adjudicate('timeout_or_pass')">
+                <span>&rarr; TIMEOUT / PASS</span>
+                <span class="shortcut-hint">Key: P or 3 (5s next)</span>
+              </button>
+              <!-- Timer Toggle -->
+              <button id="btn-toggle-timer" class="action-card-btn btn-adj-timer" onclick="toggleTimer()">
+                <span>START TIMER</span>
+                <span class="shortcut-hint">Key: Spacebar</span>
+              </button>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; padding-top:0.75rem; border-top:1px solid #334155;">
+              <div id="console-pass-history" style="font-size:0.85rem;"></div>
+              <button class="btn btn-secondary" style="font-size:0.8rem; padding:0.35rem 0.75rem;" onclick="resetTimer()">Reset Timer [R]</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Finalist Live Scores -->
+        <div>
+          <div class="card">
+            <h4 style="font-size:0.9rem; text-transform:uppercase; color:#94a3b8; margin-bottom:0.75rem; font-weight:700;">
+              FINAL ROUND SCOREBOARD
+            </h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Team</th>
+                  <th>Score</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="admin-final-scoreboard-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 2: QUALIFIER LIVE MONITOR -->
+    <section id="tab-qualifier" class="tab-content">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+          <div>
+            <h3 style="font-size:1.2rem; font-weight:700;">Qualifier Round - Live Terminal Monitor</h3>
+            <p style="font-size:0.85rem; color:#94a3b8;">Monitors computer-based test progress across lab computers in real time.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="loadQualifierLeaderboard()">&#8635; Refresh</button>
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Code</th>
+              <th>Team Name</th>
+              <th>Lab PC</th>
+              <th>Score (+1)</th>
+              <th>Time Taken</th>
+              <th>Status</th>
+              <th>Security / Violations</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="qualifier-leaderboard-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TAB 3: FINALISTS SELECTION -->
+    <section id="tab-finalists" class="tab-content">
+      <div class="card" style="text-align:center; padding:2rem;">
+        <h2 style="font-size:1.5rem; font-weight:800; margin-bottom:0.5rem; color:#f8fafc;">Top 6 Finalists Qualification</h2>
+        <p style="color:#94a3b8; max-width:650px; margin:0 auto 1.5rem;">
+          According to Functional Specification Section 2.1, the <strong>top 6 highest-ranked teams</strong> advance to the Final Round.
+          Ties are automatically broken by lowest elapsed test completion time.
+        </p>
+        <button class="btn btn-success btn-lg" onclick="promoteFinalists()">
+          &#127942; Confirm & Promote Top 6 to Final Round
+        </button>
+      </div>
+    </section>
+
+    <!-- TAB 4: QUESTION BANK -->
+    <section id="tab-questions" class="tab-content">
+      <!-- Theme & Target Breakdown Card -->
+      <div class="card" style="margin-bottom:1.25rem; background:linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border:1px solid #334155;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+          <div>
+            <div style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; color:#f59e0b; font-weight:800;">Theme: Indian Culture, Heritage & Tribal Traditions</div>
+            <h3 style="font-size:1.25rem; font-weight:800; color:#f8fafc; margin-top:0.2rem;">Question Bank Specification & Progress</h3>
+            <p style="font-size:0.8rem; color:#94a3b8; margin:0.2rem 0 0 0;">Click on any round or category box below to filter questions instantly.</p>
+          </div>
+          <button class="btn btn-danger" style="font-size:0.85rem;" onclick="clearAllQuestions()">
+            &cross; Remove All Questions
+          </button>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem;">
+          <div class="stat-filter-card" data-filter="screening" onclick="setRoundFilter('screening')" style="background:#0f172a; padding:0.85rem; border-radius:8px; border:1px solid #334155; cursor:pointer; transition:all 0.2s ease;" title="Click to filter Online Screening questions">
+            <div style="font-size:0.75rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">🖥️ Online Screening (20 min)</div>
+            <div style="font-size:1.3rem; font-weight:800; color:#38bdf8; margin:0.25rem 0;" id="stat-count-screening">0 / 20</div>
+            <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between;"><span>Target: 20</span> <span>Click to filter &rarr;</span></div>
+          </div>
+          <div class="stat-filter-card" data-filter="audio" onclick="setCategoryFilter('audio')" style="background:#0f172a; padding:0.85rem; border-radius:8px; border:1px solid #334155; cursor:pointer; transition:all 0.2s ease;" title="Click to filter Audio Round questions">
+            <div style="font-size:0.75rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">🎵 Audio Round (Projector)</div>
+            <div style="font-size:1.3rem; font-weight:800; color:#f59e0b; margin:0.25rem 0;" id="stat-count-audio">0 / 6</div>
+            <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between;"><span>Target: 6</span> <span>Click to filter &rarr;</span></div>
+          </div>
+          <div class="stat-filter-card" data-filter="visual" onclick="setCategoryFilter('visual')" style="background:#0f172a; padding:0.85rem; border-radius:8px; border:1px solid #334155; cursor:pointer; transition:all 0.2s ease;" title="Click to filter Visual Round questions">
+            <div style="font-size:0.75rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">🖼️ Visual Round (Projector)</div>
+            <div style="font-size:1.3rem; font-weight:800; color:#c084fc; margin:0.25rem 0;" id="stat-count-visual">0 / 6</div>
+            <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between;"><span>Target: 6</span> <span>Click to filter &rarr;</span></div>
+          </div>
+          <div class="stat-filter-card" data-filter="culture" onclick="setCategoryFilter('culture')" style="background:#0f172a; padding:0.85rem; border-radius:8px; border:1px solid #334155; cursor:pointer; transition:all 0.2s ease;" title="Click to filter Indian Culture questions">
+            <div style="font-size:0.75rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">🎭 Indian Culture</div>
+            <div style="font-size:1.3rem; font-weight:800; color:#34d399; margin:0.25rem 0;" id="stat-count-culture">0 / 6</div>
+            <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between;"><span>Target: 6</span> <span>Click to filter &rarr;</span></div>
+          </div>
+          <div class="stat-filter-card" data-filter="heritage" onclick="setCategoryFilter('heritage')" style="background:#0f172a; padding:0.85rem; border-radius:8px; border:1px solid #334155; cursor:pointer; transition:all 0.2s ease;" title="Click to filter Indian Heritage questions">
+            <div style="font-size:0.75rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">🏛️ Indian Heritage</div>
+            <div style="font-size:1.3rem; font-weight:800; color:#60a5fa; margin:0.25rem 0;" id="stat-count-heritage">0 / 6</div>
+            <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between;"><span>Target: 6</span> <span>Click to filter &rarr;</span></div>
+          </div>
+          <div class="stat-filter-card" data-filter="tribal" onclick="setCategoryFilter('tribal')" style="background:#0f172a; padding:0.85rem; border-radius:8px; border:1px solid #334155; cursor:pointer; transition:all 0.2s ease;" title="Click to filter Tribal Traditions questions">
+            <div style="font-size:0.75rem; color:#94a3b8; font-weight:600; text-transform:uppercase;">🏹 Tribal Traditions</div>
+            <div style="font-size:1.3rem; font-weight:800; color:#fb7185; margin:0.25rem 0;" id="stat-count-tribal">0 / 6</div>
+            <div style="font-size:0.75rem; color:#64748b; display:flex; justify-content:space-between;"><span>Target: 6</span> <span>Click to filter &rarr;</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category & Round Filtering Control Center -->
+      <div class="card" style="margin-bottom:1.25rem; background:#1e293b; border:1px solid #334155; padding:1.25rem; border-radius:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+          <div>
+            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:#38bdf8; font-weight:800;">Question Bank Controls</div>
+            <h4 style="font-size:1.15rem; font-weight:800; color:#f8fafc; margin:0.2rem 0 0 0;">Filter Questions by Category or Round</h4>
+          </div>
+          <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="openAddQuestionModal()">
+              + Add Question
+            </button>
+            <input type="file" id="csv-questions-file" accept=".csv" style="display:none;" onchange="uploadQuestionsCsv()">
+            <button class="btn btn-secondary" onclick="document.getElementById('csv-questions-file').click()">
+              Upload CSV
+            </button>
+            <a href="/api/admin/questions/sample_csv" download="sample_questions.csv" class="btn btn-secondary" style="font-size:0.85rem;">
+              Download Sample CSV
+            </a>
+          </div>
+        </div>
+
+        <!-- Filter Selectors: Category, Round, Search -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.85rem; align-items:end;">
+          <!-- Category Filter Dropdown -->
+          <div>
+            <label for="filter-category-select" style="display:block; font-size:0.8rem; font-weight:700; color:#38bdf8; margin-bottom:0.35rem; text-transform:uppercase; letter-spacing:0.04em;">
+              📂 Filter by Category:
+            </label>
+            <select id="filter-category-select" onchange="onCategorySelectChange(this.value)" style="width:100%; padding:0.6rem 0.8rem; background:#0f172a; border:2px solid #38bdf8; border-radius:6px; color:#fff; font-size:0.9rem; font-weight:600; cursor:pointer;">
+              <option value="">All Categories (Show All)</option>
+              <option value="culture">🎭 Indian Culture</option>
+              <option value="heritage">🏛️ Indian Heritage</option>
+              <option value="tribal">🏹 Tribal Traditions</option>
+              <option value="audio">🎵 Audio Round</option>
+              <option value="visual">🖼️ Visual Round</option>
+            </select>
+          </div>
+
+          <!-- Round Filter Dropdown -->
+          <div>
+            <label for="filter-round-select" style="display:block; font-size:0.8rem; font-weight:700; color:#cbd5e1; margin-bottom:0.35rem; text-transform:uppercase; letter-spacing:0.04em;">
+              🎯 Filter by Round:
+            </label>
+            <select id="filter-round-select" onchange="onRoundSelectChange(this.value)" style="width:100%; padding:0.6rem 0.8rem; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#fff; font-size:0.9rem; font-weight:600; cursor:pointer;">
+              <option value="">All Rounds (Screening & Projector)</option>
+              <option value="screening">🖥️ Online Screening (Qualifier)</option>
+              <option value="projector">📽️ Projector Quiz (Final)</option>
+            </select>
+          </div>
+
+          <!-- Keyword Search -->
+          <div>
+            <label for="filter-search-input" style="display:block; font-size:0.8rem; font-weight:700; color:#cbd5e1; margin-bottom:0.35rem; text-transform:uppercase; letter-spacing:0.04em;">
+              🔍 Search Keyword:
+            </label>
+            <div style="position:relative;">
+              <input type="text" id="filter-search-input" placeholder="Type question text or option..." oninput="onSearchFilterInput(this.value)" style="width:100%; padding:0.6rem 0.8rem; padding-right:2.2rem; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#fff; font-size:0.9rem;">
+              <button type="button" onclick="clearSearchInput()" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; color:#64748b; font-size:1.1rem; cursor:pointer; line-height:1;">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Category Filter Pills -->
+        <div style="margin-top:1rem; padding-top:0.85rem; border-top:1px solid #334155; display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+          <span style="font-size:0.8rem; font-weight:700; color:#94a3b8; margin-right:0.3rem;">Category Filter Buttons:</span>
+          <button id="cat-pill-all" class="btn btn-primary cat-pill-btn" onclick="setCategoryFilter('')" style="padding:0.3rem 0.75rem; font-size:0.8rem; border-radius:20px;">All (<span id="count-pill-all">0</span>)</button>
+          <button id="cat-pill-culture" class="btn btn-secondary cat-pill-btn" onclick="setCategoryFilter('culture')" style="padding:0.3rem 0.75rem; font-size:0.8rem; border-radius:20px;">🎭 Indian Culture (<span id="count-pill-culture">0</span>)</button>
+          <button id="cat-pill-heritage" class="btn btn-secondary cat-pill-btn" onclick="setCategoryFilter('heritage')" style="padding:0.3rem 0.75rem; font-size:0.8rem; border-radius:20px;">🏛️ Indian Heritage (<span id="count-pill-heritage">0</span>)</button>
+          <button id="cat-pill-tribal" class="btn btn-secondary cat-pill-btn" onclick="setCategoryFilter('tribal')" style="padding:0.3rem 0.75rem; font-size:0.8rem; border-radius:20px;">🏹 Tribal Traditions (<span id="count-pill-tribal">0</span>)</button>
+          <button id="cat-pill-audio" class="btn btn-secondary cat-pill-btn" onclick="setCategoryFilter('audio')" style="padding:0.3rem 0.75rem; font-size:0.8rem; border-radius:20px;">🎵 Audio Round (<span id="count-pill-audio">0</span>)</button>
+          <button id="cat-pill-visual" class="btn btn-secondary cat-pill-btn" onclick="setCategoryFilter('visual')" style="padding:0.3rem 0.75rem; font-size:0.8rem; border-radius:20px;">🖼️ Visual Round (<span id="count-pill-visual">0</span>)</button>
+        </div>
+      </div>
+      <div id="questions-list-container"></div>
+    </section>
+
+    <!-- TAB 5: TEAMS & LAB PCS -->
+    <section id="tab-teams" class="tab-content">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+          <div>
+            <h3 style="font-size:1.2rem; font-weight:700;">Participating Teams & Lab Station Assignments</h3>
+            <p style="font-size:0.85rem; color:#94a3b8;">Add, edit names, manage PINs, or remove teams. Changes sync immediately to all screens.</p>
+          </div>
+          <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="document.getElementById('modal-add-team').classList.add('active')">
+              + Register Team
+            </button>
+            <input type="file" id="csv-teams-file" accept=".csv" style="display:none;" onchange="uploadTeamsCsv()">
+            <button class="btn btn-secondary" onclick="document.getElementById('csv-teams-file').click()">
+              Upload Teams CSV
+            </button>
+            <a href="/api/admin/teams/sample_csv" download="sample_teams.csv" class="btn btn-secondary" style="font-size:0.85rem;">
+              Download Sample CSV
+            </a>
+            <button class="btn btn-danger" style="font-size:0.85rem;" onclick="clearAllTeams()">
+              &cross; Remove All Teams
+            </button>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Team Code</th>
+              <th>Team Name</th>
+              <th>Members</th>
+              <th>Assigned PC</th>
+              <th>PIN Code</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="teams-table-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TAB 6: AUDIT & LEDGER -->
+    <section id="tab-audit" class="tab-content">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+        <div class="card">
+          <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:0.75rem;">Score Ledger (Audit Trail)</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Team</th>
+                <th>Round</th>
+                <th>&Delta;</th>
+                <th>Total</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="score-transactions-rows"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:0.75rem;">System & Recovery Events</h3>
+          <div id="audit-events-list" style="max-height:450px; overflow-y:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 7: REPORTS & RECOVERY -->
+    <section id="tab-reports" class="tab-content">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+        <div class="card">
+          <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:0.5rem;">Official Competition Reports</h3>
+          <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:1.25rem;">Download clean, formatted CSV reports for printing and records.</p>
+          <div style="display:flex; flex-direction:column; gap:0.75rem;">
+            <a href="/api/admin/reports/qualifier" class="btn btn-primary">
+              &#128196; Download Qualifier Results (CSV)
+            </a>
+            <a href="/api/admin/reports/final" class="btn btn-success">
+              &#128196; Download Final Round Scorecard (CSV)
+            </a>
+          </div>
+        </div>
+        <div class="card" style="border:1px solid #ef4444;">
+          <h3 style="font-size:1.2rem; font-weight:700; color:#ef4444; margin-bottom:0.5rem;">Emergency Recovery & Reset</h3>
+          <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:1.25rem;">
+            All data is written to SQLite immediately on every click. If power fails, simply restart the server.
+            To wipe participant progress and start a fresh competition, use the reset button below.
+          </p>
+          <button class="btn btn-danger" onclick="resetEntireCompetition()">
+            &#9888; Reset All Progress (Fresh Competition)
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- MODAL: ADD QUESTION -->
+  <div id="modal-add-question" class="modal-overlay">
+    <div class="modal-box" style="max-width:650px;">
+      <h3 style="font-size:1.25rem; font-weight:800; margin-bottom:1rem; color:#f8fafc;">Add New Question</h3>
+      <form id="form-add-question" onsubmit="addQuestion(event)">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Question Pool:</label>
+            <select name="round_type" class="btn btn-secondary" style="width:100%; margin-top:0.25rem;" onchange="onPoolChange(this, 'add')">
+              <option value="screening">&#128187; Online Screening (Computer Test)</option>
+              <option value="projector" selected>&#128253; Projector Quiz (Auditorium Stage)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Question Media Type:</label>
+            <select name="media_type" id="add-media-type" class="btn btn-secondary" style="width:100%; margin-top:0.25rem;" onchange="onMediaTypeChange(this, 'add')">
+              <option value="none">&#128221; Text Only</option>
+              <option value="image">&#128444;&#65039; Image-Based Question</option>
+              <option value="audio">&#128266; Audio-Clip Question</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Media Upload Row (shown when image or audio selected) -->
+        <div id="add-media-row" style="display:none; background:#1e293b; padding:0.75rem 1rem; border-radius:6px; border:1px solid #334155; margin-bottom:0.75rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+            <label id="add-media-label" style="font-size:0.85rem; color:#38bdf8; font-weight:700;">Upload Media File:</label>
+            <span style="font-size:0.75rem; color:#94a3b8;">Saved to local server for offline LAN</span>
+          </div>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="file" id="add-media-file" style="font-size:0.85rem; color:#cbd5e1; flex:1;" onchange="uploadQuestionMedia(this, 'add')">
+            <input type="text" name="media_url" id="add-media-url" placeholder="or enter /static/uploads/... path" style="flex:1; padding:0.4rem 0.6rem; background:#0f172a; border:1px solid #334155; color:#fff; border-radius:4px; font-size:0.85rem;">
+          </div>
+          <div id="add-media-preview" style="margin-top:0.5rem; display:none;"></div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:2fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Category / Round:</label>
+            <input type="text" name="category" id="add-q-category" list="theme-categories" value="Indian Culture" required style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;" oninput="onCategoryChange(this, 'add')">
+            <datalist id="theme-categories">
+              <option value="Audio Round"></option>
+              <option value="Visual Round"></option>
+              <option value="Indian Culture"></option>
+              <option value="Indian Heritage"></option>
+              <option value="Tribal Traditions"></option>
+            </datalist>
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Marks Awarded:</label>
+            <input type="number" name="marks" id="add-marks" value="10" min="1" max="20" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+        </div>
+
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Question Text:</label>
+          <textarea name="q_text" rows="3" required placeholder="Type the question statement..." style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem; font-size:0.95rem;"></textarea>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.75rem;">
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option A:</label>
+            <input type="text" name="opt_a" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option B:</label>
+            <input type="text" name="opt_b" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option C:</label>
+            <input type="text" name="opt_c" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option D:</label>
+            <input type="text" name="opt_d" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 2fr; gap:0.75rem; margin-bottom:1.25rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Correct Option:</label>
+            <select name="correct_opt" class="btn btn-secondary" style="width:100%; margin-top:0.25rem; font-weight:700;">
+              <option value="0">Option A</option>
+              <option value="1">Option B</option>
+              <option value="2">Option C</option>
+              <option value="3">Option D</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Answer Explanation (Optional):</label>
+            <input type="text" name="explanation" placeholder="Brief fact or explanation..." style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-add-question').classList.remove('active')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Question</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT QUESTION -->
+  <div id="modal-edit-question" class="modal-overlay">
+    <div class="modal-box" style="max-width:650px;">
+      <h3 style="font-size:1.25rem; font-weight:800; margin-bottom:1rem; color:#f8fafc;">Edit Question</h3>
+      <form id="form-edit-question" onsubmit="saveEditQuestion(event)">
+        <input type="hidden" name="question_id" id="edit-q-id">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Question Pool:</label>
+            <select name="round_type" id="edit-q-round" class="btn btn-secondary" style="width:100%; margin-top:0.25rem;">
+              <option value="screening">&#128187; Online Screening (Computer Test)</option>
+              <option value="projector">&#128253; Projector Quiz (Auditorium Stage)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Question Media Type:</label>
+            <select name="media_type" id="edit-media-type" class="btn btn-secondary" style="width:100%; margin-top:0.25rem;" onchange="onMediaTypeChange(this, 'edit')">
+              <option value="none">&#128221; Text Only</option>
+              <option value="image">&#128444;&#65039; Image-Based Question</option>
+              <option value="audio">&#128266; Audio-Clip Question</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Media Upload Row for Edit -->
+        <div id="edit-media-row" style="display:none; background:#1e293b; padding:0.75rem 1rem; border-radius:6px; border:1px solid #334155; margin-bottom:0.75rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+            <label id="edit-media-label" style="font-size:0.85rem; color:#38bdf8; font-weight:700;">Media File / URL:</label>
+            <span style="font-size:0.75rem; color:#94a3b8;">Upload new file or keep existing URL</span>
+          </div>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="file" id="edit-media-file" style="font-size:0.85rem; color:#cbd5e1; flex:1;" onchange="uploadQuestionMedia(this, 'edit')">
+            <input type="text" name="media_url" id="edit-media-url" placeholder="/static/uploads/..." style="flex:1; padding:0.4rem 0.6rem; background:#0f172a; border:1px solid #334155; color:#fff; border-radius:4px; font-size:0.85rem;">
+          </div>
+          <div id="edit-media-preview" style="margin-top:0.5rem; display:none;"></div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:2fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Category / Round:</label>
+            <input type="text" name="category" id="edit-q-category" list="theme-categories" required style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;" oninput="onCategoryChange(this, 'edit')">
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Marks Awarded:</label>
+            <input type="number" name="marks" id="edit-q-marks" min="1" max="20" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+        </div>
+
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Question Text:</label>
+          <textarea name="q_text" id="edit-q-text" rows="3" required style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem; font-size:0.95rem;"></textarea>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:0.75rem;">
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option A:</label>
+            <input type="text" name="opt_a" id="edit-q-opta" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option B:</label>
+            <input type="text" name="opt_b" id="edit-q-optb" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option C:</label>
+            <input type="text" name="opt_c" id="edit-q-optc" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+          <div>
+            <label style="font-size:0.8rem; color:#94a3b8;">Option D:</label>
+            <input type="text" name="opt_d" id="edit-q-optd" required style="width:100%; padding:0.4rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px;">
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 2fr; gap:0.75rem; margin-bottom:1.25rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Correct Option:</label>
+            <select name="correct_opt" id="edit-q-correct" class="btn btn-secondary" style="width:100%; margin-top:0.25rem; font-weight:700;">
+              <option value="0">Option A</option>
+              <option value="1">Option B</option>
+              <option value="2">Option C</option>
+              <option value="3">Option D</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8; font-weight:600;">Answer Explanation (Optional):</label>
+            <input type="text" name="explanation" id="edit-q-explanation" placeholder="Brief fact or explanation..." style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-edit-question').classList.remove('active')">Cancel</button>
+          <button type="submit" class="btn btn-success">Update Question</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD TEAM -->
+  <div id="modal-add-team" class="modal-overlay">
+    <div class="modal-box">
+      <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:1rem;">Register New Team</h3>
+      <form id="form-add-team" onsubmit="addTeam(event)">
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8;">Team Code (e.g. T16):</label>
+          <input type="text" name="team_code" required placeholder="T16" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+        </div>
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8;">Team Name:</label>
+          <input type="text" name="team_name" required placeholder="Team Himalaya" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+        </div>
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8;">Student Members:</label>
+          <input type="text" name="team_members" placeholder="Pooja, Rahul, Amit" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:1.25rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8;">Assigned Lab PC:</label>
+            <input type="text" name="team_station" value="PC-16" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8;">Login PIN:</label>
+            <input type="text" name="team_pin" value="1234" required style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-add-team').classList.remove('active')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register Team</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT TEAM -->
+  <div id="modal-edit-team" class="modal-overlay">
+    <div class="modal-box">
+      <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:1rem;">Edit Team Details</h3>
+      <form id="form-edit-team" onsubmit="saveEditTeam(event)">
+        <input type="hidden" name="team_id" id="edit-team-id">
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8;">Team Code:</label>
+          <input type="text" name="team_code" id="edit-team-code" required style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem; font-weight:700;">
+        </div>
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8;">Team Name:</label>
+          <input type="text" name="team_name" id="edit-team-name" required style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem; font-weight:600;">
+        </div>
+        <div style="margin-bottom:0.75rem;">
+          <label style="font-size:0.85rem; color:#94a3b8;">Student Members:</label>
+          <input type="text" name="team_members" id="edit-team-members" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:1.25rem;">
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8;">Assigned Lab PC:</label>
+            <input type="text" name="team_station" id="edit-team-station" style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+          <div>
+            <label style="font-size:0.85rem; color:#94a3b8;">Login PIN:</label>
+            <input type="text" name="team_pin" id="edit-team-pin" required style="width:100%; padding:0.5rem; background:#1e293b; border:1px solid #334155; color:#fff; border-radius:4px; margin-top:0.25rem;">
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-edit-team').classList.remove('active')">Cancel</button>
+          <button type="submit" class="btn btn-success">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/admin.js?v=20261117_v4"></script>
+</body>
+</html>

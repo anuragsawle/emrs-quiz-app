@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EMRS Quiz Competition - Big Screen Projector View</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="projector-body">
+
+  <!-- Projector Header -->
+  <header class="projector-header">
+    <div style="display:flex; align-items:center; gap:1rem;">
+      <div class="header-logo">E</div>
+      <div>
+        <h1 style="font-size:1.4rem; font-weight:800; letter-spacing:0.02em;">EMRS INTER-SCHOOL QUIZ COMPETITION</h1>
+        <p style="font-size:0.85rem; color:#94a3b8; font-weight:600;">FINAL ROUND &bull; AUDITORIUM DISPLAY</p>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+      <span id="sound-status" class="badge badge-blue">SOUND: ON [M]</span>
+      <span id="connection-status" class="badge badge-green">CONNECTING...</span>
+      <button class="btn btn-secondary" style="padding:0.4rem 0.8rem; font-size:0.85rem;" onclick="document.documentElement.requestFullscreen()">Fullscreen [F]</button>
+    </div>
+  </header>
+
+  <!-- Projector Main Presentation Area -->
+  <main class="projector-main">
+    
+    <!-- Left Column: Active Turn, Question & Options -->
+    <div class="projector-question-area">
+      
+      <!-- 5 Competition Rounds Stage Bar -->
+      <div id="projector-rounds-nav" style="display:grid; grid-template-columns:repeat(5, 1fr); gap:0.55rem; margin-bottom:1.15rem;">
+        <div class="stage-round-pill" id="stage-round-1" onclick="projectorSelectRound(1)" style="padding:0.6rem 0.5rem; background:#0f172a; border:2px solid #334155; border-radius:10px; text-align:center; cursor:pointer; transition:all 0.25s ease;" title="Click to view Round 1">
+          <div style="font-size:0.65rem; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em;">Round 1</div>
+          <div style="font-size:0.95rem; font-weight:900; color:#10b981; margin:0.2rem 0 0.1rem;">🎭 Indian Culture</div>
+          <div style="font-size:0.7rem; color:#64748b;" id="round-count-1">6 Questions</div>
+        </div>
+        <div class="stage-round-pill" id="stage-round-2" onclick="projectorSelectRound(2)" style="padding:0.6rem 0.5rem; background:#0f172a; border:2px solid #334155; border-radius:10px; text-align:center; cursor:pointer; transition:all 0.25s ease;" title="Click to view Round 2">
+          <div style="font-size:0.65rem; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em;">Round 2</div>
+          <div style="font-size:0.95rem; font-weight:900; color:#0ea5e9; margin:0.2rem 0 0.1rem;">🏛️ Indian Heritage</div>
+          <div style="font-size:0.7rem; color:#64748b;" id="round-count-2">7 Questions</div>
+        </div>
+        <div class="stage-round-pill" id="stage-round-3" onclick="projectorSelectRound(3)" style="padding:0.6rem 0.5rem; background:#0f172a; border:2px solid #334155; border-radius:10px; text-align:center; cursor:pointer; transition:all 0.25s ease;" title="Click to view Round 3">
+          <div style="font-size:0.65rem; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em;">Round 3</div>
+          <div style="font-size:0.95rem; font-weight:900; color:#f43f5e; margin:0.2rem 0 0.1rem;">🏹 Tribal Traditions</div>
+          <div style="font-size:0.7rem; color:#64748b;" id="round-count-3">7 Questions</div>
+        </div>
+        <div class="stage-round-pill" id="stage-round-4" onclick="projectorSelectRound(4)" style="padding:0.6rem 0.5rem; background:#0f172a; border:2px solid #334155; border-radius:10px; text-align:center; cursor:pointer; transition:all 0.25s ease;" title="Click to view Round 4">
+          <div style="font-size:0.65rem; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em;">Round 4</div>
+          <div style="font-size:0.95rem; font-weight:900; color:#f59e0b; margin:0.2rem 0 0.1rem;">🎵 Audio Round</div>
+          <div style="font-size:0.7rem; color:#64748b;" id="round-count-4">6 Questions</div>
+        </div>
+        <div class="stage-round-pill" id="stage-round-5" onclick="projectorSelectRound(5)" style="padding:0.6rem 0.5rem; background:#0f172a; border:2px solid #334155; border-radius:10px; text-align:center; cursor:pointer; transition:all 0.25s ease;" title="Click to view Round 5">
+          <div style="font-size:0.65rem; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em;">Round 5</div>
+          <div style="font-size:0.95rem; font-weight:900; color:#a855f7; margin:0.2rem 0 0.1rem;">🖼️ Visual Round</div>
+          <div style="font-size:0.7rem; color:#64748b;" id="round-count-5">6 Questions</div>
+        </div>
+      </div>
+
+      <!-- Active Team Spotlight Banner -->
+      <div class="active-team-spotlight">
+        <div>
+          <div style="font-size:0.85rem; color:#cbd5e1; font-weight:700; text-transform:uppercase; margin-bottom:0.25rem;">CURRENT ANSWERING OPPORTUNITY</div>
+          <div id="spotlight-team-title" class="spotlight-team-title">AWAITING QUESTION...</div>
+        </div>
+        <div id="spotlight-turn-type" class="spotlight-turn-type turn-main">MAIN TURN (60s)</div>
+      </div>
+
+      <!-- Question Content -->
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.6rem; margin-bottom:1.15rem;">
+          <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+            <span id="proj-round-badge" class="badge" style="font-size:1rem; font-weight:900; padding:0.4rem 0.95rem; background:#10b981; color:#fff; border-radius:6px; box-shadow:0 0 15px rgba(16,185,129,0.35);">
+              ROUND 1: INDIAN CULTURE
+            </span>
+            <span id="q-number-badge" class="badge badge-gold" style="font-size:0.95rem; font-weight:800; padding:0.35rem 0.8rem;">
+              QUESTION 1 OF 6
+            </span>
+            <span id="q-overall-badge" style="font-size:0.85rem; color:#94a3b8; font-weight:700;">
+              (Overall Q1 of 32)
+            </span>
+          </div>
+          <span id="q-turn-marks-badge" class="badge badge-blue" style="font-size:0.95rem; font-weight:800; padding:0.35rem 0.85rem;">
+            MAIN TURN • 10 MARKS (60s)
+          </span>
+        </div>
+
+        <!-- Pre-Reveal Card with the Big Stage Show Question Button -->
+        <div id="projector-hidden-prompt" style="display:none; text-align:center; padding:3.5rem 2rem; background:rgba(30, 41, 59, 0.7); border:2px solid #3b82f6; border-radius:16px; margin: 1.5rem 0; box-shadow:0 0 40px rgba(59, 130, 246, 0.25);">
+          <div style="font-size:3.5rem; margin-bottom:1rem;">&#127917;</div>
+          <h2 style="font-size:2.4rem; font-weight:900; color:#f8fafc; letter-spacing:0.02em;">QUESTION READY ON STAGE</h2>
+          <p style="font-size:1.25rem; color:#94a3b8; margin:0.75rem 0 2rem;">
+            Click the button below to display the question to the teams and start the 60-second timer.
+          </p>
+          <button id="projector-main-show-btn" class="btn btn-success" style="font-size:1.8rem; font-weight:900; padding:1.25rem 3.5rem; border-radius:50px; box-shadow:0 0 35px rgba(16, 185, 129, 0.6); cursor:pointer; text-transform:uppercase; letter-spacing:0.04em;" onclick="projectorShowQuestion()">
+            &#128065;&#65039; SHOW QUESTION &bull; START TIMER
+          </button>
+          <div style="margin-top:1.25rem; font-size:0.95rem; color:#64748b;">
+            Shortcut: Press <strong>Spacebar</strong> or <strong>Enter</strong> to Reveal
+          </div>
+        </div>
+
+        <h2 id="projector-q-text" class="projector-q-text">Loading question...</h2>
+
+        <!-- Media Display (Image or Audio for Projector Quiz) -->
+        <div id="projector-media-container" style="display:none; margin-bottom:1.5rem; text-align:center;"></div>
+        <audio id="projector-audio-player" style="display:none;"></audio>
+
+        <!-- Direct Answer Hint for Screen Click or Keyboard -->
+        <div id="projector-answer-hint" style="display:none; font-size:0.95rem; color:#38bdf8; font-weight:700; margin-bottom:0.75rem;">
+          &#128073; Tap / Click any option card on screen or press <strong>[A]</strong>, <strong>[B]</strong>, <strong>[C]</strong>, or <strong>[D]</strong> to answer
+        </div>
+
+        <!-- Options Grid (Interactive Clickable Cards) -->
+        <div id="projector-options-grid" class="projector-options-grid"></div>
+
+        <!-- Outcome / Explanation when ended -->
+        <div id="question-status-banner" style="display:none; margin-top:1.5rem; padding:1rem; border-radius:8px; background:rgba(0,0,0,0.4); text-align:center; font-size:1.3rem;"></div>
+        <div id="projector-explanation-box" style="display:none; margin-top:1rem; padding:1rem 1.25rem; border-radius:8px; background:#1e293b; border-left:4px solid #38bdf8; font-size:1.15rem; color:#cbd5e1;"></div>
+
+        <!-- On-Screen Autonomous Stage Toolbar -->
+        <div id="projector-stage-toolbar" style="margin-top:1.75rem; padding:0.85rem 1.25rem; background:rgba(15, 23, 42, 0.95); border:1px solid #334155; border-radius:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
+          <!-- Navigation -->
+          <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+            <select id="proj-select-round" onchange="projectorSelectRound(this.value)" style="padding:0.45rem 0.75rem; background:#1e293b; border:1.5px solid #38bdf8; border-radius:6px; color:#fff; font-size:0.85rem; font-weight:800; cursor:pointer;">
+              <option value="1">Round 1: Indian Culture (6 Qs)</option>
+              <option value="2">Round 2: Indian Heritage (7 Qs)</option>
+              <option value="3">Round 3: Tribal Traditions (7 Qs)</option>
+              <option value="4">Round 4: Audio Round (6 Qs)</option>
+              <option value="5">Round 5: Visual Round (6 Qs)</option>
+            </select>
+            <button id="proj-btn-prev" class="btn btn-secondary" style="padding:0.45rem 0.85rem; font-size:0.85rem;" onclick="projectorNavigate(-1)">
+              &larr; Prev
+            </button>
+            <button id="proj-btn-next" class="btn btn-secondary" style="padding:0.45rem 0.85rem; font-size:0.85rem;" onclick="projectorNavigate(1)">
+              Next &rarr;
+            </button>
+            <button id="proj-btn-reset-q" class="btn btn-secondary" style="padding:0.45rem 0.85rem; font-size:0.85rem;" title="Restart / Reopen Question" onclick="projectorResetQuestion()">
+              &#128260; Restart [R]
+            </button>
+          </div>
+
+          <!-- Visibility & Timer Controls -->
+          <div style="display:flex; gap:0.4rem; align-items:center;">
+            <button id="proj-btn-show-toggle" class="btn btn-success" style="padding:0.45rem 1rem; font-size:0.85rem; font-weight:700;" onclick="projectorShowQuestion()">
+              &#128065;&#65039; Show Question [Space]
+            </button>
+            <button id="proj-btn-timer-toggle" class="btn btn-secondary" style="padding:0.45rem 0.85rem; font-size:0.85rem;" onclick="projectorToggleTimer()">
+              &#9208; Pause [P]
+            </button>
+          </div>
+
+          <!-- Stage Adjudication Controls -->
+          <div id="proj-adjudicate-group" style="display:flex; gap:0.4rem; align-items:center;">
+            <span style="font-size:0.75rem; font-weight:800; color:#94a3b8; text-transform:uppercase; margin-right:0.25rem;">Stage Judge:</span>
+            <button id="proj-btn-adj-correct" class="btn btn-success" style="padding:0.45rem 0.95rem; font-size:0.85rem; font-weight:800; background:#059669; border-color:#10b981;" onclick="projectorAdjudicate('correct')">
+              &#10004; Correct (+5)
+            </button>
+            <button id="proj-btn-adj-wrong" class="btn btn-danger" style="padding:0.45rem 0.95rem; font-size:0.85rem; font-weight:800; background:#dc2626; border-color:#ef4444;" onclick="projectorAdjudicate('incorrect')">
+              &#10006; Wrong (0)
+            </button>
+            <button id="proj-btn-adj-pass" class="btn btn-warning" style="padding:0.45rem 0.95rem; font-size:0.85rem; font-weight:800; background:#d97706; border-color:#f59e0b;" onclick="projectorAdjudicate('timeout_or_pass')">
+              &#9201; Pass (5s) [T]
+            </button>
+            <button id="proj-btn-reveal-answer" class="btn btn-secondary" style="padding:0.45rem 0.85rem; font-size:0.85rem;" onclick="projectorToggleAnswer()">
+              &#127919; Key [K]
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Big Countdown, Rotation Trail & Live Scoreboard -->
+    <aside class="projector-sidebar">
+      
+      <!-- Big Countdown Timer -->
+      <div class="big-timer-card">
+        <div id="timer-circle" class="timer-circle">
+          <span id="timer-number" class="timer-number">60</span>
+        </div>
+        <div class="timer-label">SECONDS REMAINING</div>
+      </div>
+
+      <!-- Rotation & Pass Trail Sequence -->
+      <div class="pass-trail-card">
+        <div class="pass-trail-title">ROTATION & PASSING SEQUENCE</div>
+        <div id="pass-trail-slots" class="pass-trail-slots"></div>
+      </div>
+
+      <!-- Live Scoreboard -->
+      <div class="projector-scoreboard-card">
+        <div style="font-size:0.85rem; font-weight:700; text-transform:uppercase; color:#94a3b8; margin-bottom:0.75rem;">LIVE FINAL SCOREBOARD</div>
+        <table class="projector-score-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Finalist Team</th>
+              <th style="text-align:right;">Score</th>
+            </tr>
+          </thead>
+          <tbody id="projector-scoreboard-rows"></tbody>
+        </table>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <script src="/static/js/audio.js"></script>
+  <script src="/static/js/projector.js?v=20261117_5rounds"></script>
+</body>
+</html>

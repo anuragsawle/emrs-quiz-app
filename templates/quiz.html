@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EMRS Quiz Competition - Participant Terminal</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="quiz-body">
+
+  <!-- =========================================================================
+       SCREEN 1: PARTICIPANT LOGIN SCREEN
+       ========================================================================= -->
+  <div id="screen-login" style="display:flex; min-height:100vh; align-items:center; justify-content:center; padding:1.5rem; background:#0f172a;">
+    <div class="card" style="width:100%; max-width:440px; padding:2.5rem; text-align:center; box-shadow:var(--shadow-lg);">
+      <div class="header-logo" style="margin:0 auto 1rem; width:48px; height:48px; font-size:1.5rem;">E</div>
+      <h2 style="font-size:1.4rem; font-weight:800; margin-bottom:0.25rem; color:#f8fafc;">EMRS QUIZ COMPETITION</h2>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:1.5rem;">Computer-Based Qualifier Round &bull; 20 Minutes</p>
+
+      <div id="login-error" style="display:none; padding:0.65rem; margin-bottom:1rem; border-radius:6px; background:#fee2e2; border:1px solid #f87171; color:#b91c1c; font-size:0.85rem; font-weight:600;"></div>
+
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div style="text-align:left; margin-bottom:1rem;">
+          <label style="font-size:0.85rem; font-weight:600; color:#cbd5e1;">Team Code:</label>
+          <input type="text" name="team_code" placeholder="e.g. T01" required autofocus style="width:100%; padding:0.75rem 1rem; margin-top:0.35rem; border-radius:6px; border:2px solid #334155; background:#1e293b; color:#fff; font-size:1.1rem; font-weight:700; text-transform:uppercase;">
+        </div>
+        <div style="text-align:left; margin-bottom:1.5rem;">
+          <label style="font-size:0.85rem; font-weight:600; color:#cbd5e1;">Assigned PIN Code:</label>
+          <input type="password" name="team_pin" placeholder="4-digit PIN" required style="width:100%; padding:0.75rem 1rem; margin-top:0.35rem; border-radius:6px; border:2px solid #334155; background:#1e293b; color:#fff; font-size:1.1rem; font-weight:700;">
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%;">
+          Enter Quiz Terminal &rarr;
+        </button>
+      </form>
+      <p style="font-size:0.75rem; color:#64748b; margin-top:1.5rem;">Please check with your school computer lab invigilator for your team PIN.</p>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       SCREEN 2: ACTIVE QUIZ EXAM TERMINAL
+       ========================================================================= -->
+  <div id="screen-exam" style="display:none; min-height:100vh; flex-direction:column;">
+    
+    <!-- Top Sticky Bar -->
+    <header class="quiz-nav-top">
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <div class="header-logo" style="width:32px; height:32px; font-size:1rem;">E</div>
+        <div>
+          <h2 id="header-team-name" style="font-size:1.05rem; font-weight:800; color:#0f172a;">[T01] Team Birsa Munda</h2>
+          <span id="header-station" class="badge badge-blue">PC-01</span>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:1.25rem;">
+        <div id="quiz-timer-box" class="quiz-timer-box">
+          <span style="font-size:0.9rem; font-weight:700; text-transform:uppercase;">Time Left:</span>
+          <span id="quiz-timer-val">20:00</span>
+        </div>
+        <button class="btn btn-success" style="font-weight:700;" onclick="openSubmitModal()">
+          Submit Test &check;
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="container" style="max-width:1250px;">
+      <div class="quiz-layout">
+        
+        <!-- Left: Question Area -->
+        <section class="question-card">
+          <div class="question-header">
+            <div>
+              <span id="q-curr-num" style="font-size:1.1rem; font-weight:800; color:#2563eb;">Question 1 of 20</span>
+              <span id="q-curr-category" class="badge badge-purple" style="margin-left:0.5rem;">Science</span>
+            </div>
+            <div>
+              <span class="badge badge-green">+1 Mark</span>
+              <span class="badge" style="background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; margin-left:0.25rem;">0 Negative</span>
+            </div>
+          </div>
+
+          <div id="q-curr-text" class="question-text">Loading question text...</div>
+
+          <!-- Question Media Preview (for Image/Audio screening questions) -->
+          <div id="q-media-container" style="display:none; margin: 1rem 0; text-align:center;"></div>
+
+          <!-- Options -->
+          <div id="q-options-container" class="options-container"></div>
+
+          <!-- Question Actions -->
+          <div class="question-actions">
+            <div style="display:flex; gap:0.5rem;">
+              <button id="btn-mark-review" class="btn btn-secondary" onclick="toggleReview()">Mark for Review</button>
+              <button class="btn btn-secondary" onclick="clearSelection()">Clear Selection</button>
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+              <button id="btn-prev" class="btn btn-secondary" onclick="prevQuestion()" disabled>&larr; Previous [P]</button>
+              <button id="btn-next" class="btn btn-primary" onclick="nextQuestion()">Next [N] &rarr;</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right: Palette & Stats -->
+        <aside class="palette-card">
+          <h3 style="font-size:1rem; font-weight:700; color:#1e293b; padding-bottom:0.5rem; border-bottom:1px solid #e2e8f0;">
+            Question Navigator
+          </h3>
+          <div id="palette-grid" class="palette-grid"></div>
+
+          <!-- Status Summary Legend -->
+          <div class="palette-legend">
+            <div class="legend-item">
+              <div class="legend-color" style="background:#10b981;"></div>
+              <span>Answered: <strong id="stat-answered" style="color:#0f172a;">0</strong></span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background:#f1f5f9; border:1px solid #cbd5e1;"></div>
+              <span>Not Answered: <strong id="stat-unanswered" style="color:#0f172a;">0</strong></span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background:#f59e0b;"></div>
+              <span>Marked for Review: <strong id="stat-review" style="color:#0f172a;">0</strong></span>
+            </div>
+          </div>
+        </aside>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- =========================================================================
+       SCREEN 3: SUBMITTED SUCCESS SCREEN
+       ========================================================================= -->
+  <div id="screen-submitted" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:1.5rem; background:#0f172a;">
+    <div class="card" style="width:100%; max-width:500px; padding:3rem 2rem; text-align:center; box-shadow:var(--shadow-lg);">
+      <div style="width:64px; height:64px; border-radius:50%; background:rgba(16, 185, 129, 0.2); border:2px solid #10b981; color:#10b981; font-size:2rem; display:flex; align-items:center; justify-content:center; margin:0 auto 1.5rem;">
+        &#10004;
+      </div>
+      <h2 style="font-size:1.6rem; font-weight:800; color:#f8fafc; margin-bottom:0.5rem;">Test Submitted Successfully!</h2>
+      <p style="font-size:1rem; color:#94a3b8; line-height:1.5; margin-bottom:1.5rem;">
+        Your qualifier attempt and precise completion timestamp have been saved securely on the server.
+      </p>
+      <div style="background:#1e293b; border-radius:8px; padding:1rem; margin-bottom:1.5rem; font-size:0.9rem; color:#cbd5e1;">
+        The Quiz Master will announce the top 6 qualifying teams for the Auditorium Final Round shortly.
+      </div>
+      <button class="btn btn-secondary" onclick="handleLogout()">Log Out of Terminal</button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: FULLSCREEN LOCKDOWN START PROMPT
+       ========================================================================= -->
+  <div id="modal-fullscreen-prompt" class="modal-overlay">
+    <div class="modal-box" style="text-align:center; max-width:480px; padding:2.5rem 2rem;">
+      <div style="width:60px; height:60px; border-radius:50%; background:#eff6ff; border:2px solid #3b82f6; color:#2563eb; font-size:1.8rem; display:flex; align-items:center; justify-content:center; margin:0 auto 1.25rem;">
+        &#128274;
+      </div>
+      <h3 style="font-size:1.35rem; font-weight:800; color:#0f172a; margin-bottom:0.5rem;">Exam Lockdown Mode</h3>
+      <p style="font-size:0.95rem; color:#64748b; line-height:1.5; margin-bottom:1.5rem;">
+        To ensure fair competition, you must stay on this quiz window in full-screen mode.
+        <strong>Switching windows, tabs, or exiting full-screen is monitored and reported live to the Quiz Master.</strong>
+      </p>
+      <button class="btn btn-primary btn-lg" style="width:100%;" onclick="enableFullscreenAndStart()">
+        Enter Fullscreen & Start &rarr;
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: SECURITY VIOLATION ALERT OVERLAY
+       ========================================================================= -->
+  <div id="modal-violation-alert" class="modal-overlay" style="z-index:2000; background:rgba(15, 23, 42, 0.95);">
+    <div class="modal-box" style="text-align:center; border:2px solid #ef4444; max-width:500px; padding:2.5rem 2rem;">
+      <div style="width:64px; height:64px; border-radius:50%; background:#fee2e2; border:2px solid #ef4444; color:#dc2626; font-size:2rem; display:flex; align-items:center; justify-content:center; margin:0 auto 1.25rem; animation:pulse-red 1s infinite;">
+        &#9888;
+      </div>
+      <h3 style="font-size:1.4rem; font-weight:900; color:#dc2626; margin-bottom:0.5rem;">WINDOW SWITCH DETECTED!</h3>
+      <p style="font-size:1rem; color:#475569; margin-bottom:1rem; line-height:1.5;">
+        You navigated away from the quiz window or minimized your browser.
+      </p>
+      <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:1rem; margin-bottom:1.5rem;">
+        <div style="font-size:1.15rem; font-weight:800; color:#b91c1c;">
+          VIOLATION <span id="violation-count-display">1</span> OF 3
+        </div>
+        <p style="font-size:0.85rem; color:#991b1b; margin-top:0.35rem;">
+          This incident was reported to the Quiz Master console. Reaching 3 violations will automatically terminate your exam!
+        </p>
+      </div>
+      <button class="btn btn-danger btn-lg" style="width:100%;" onclick="resumeExamFromLockdown()">
+        Return to Exam & Re-lock Fullscreen
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: LOCKDOWN TERMINATED OVERLAY
+       ========================================================================= -->
+  <div id="modal-lockdown-terminated" class="modal-overlay" style="z-index:3000; background:#0f172a;">
+    <div class="modal-box" style="text-align:center; border:2px solid #ef4444; max-width:500px; padding:2.5rem 2rem;">
+      <div style="width:64px; height:64px; border-radius:50%; background:#dc2626; color:#ffffff; font-size:2rem; display:flex; align-items:center; justify-content:center; margin:0 auto 1.25rem;">
+        &#10006;
+      </div>
+      <h3 style="font-size:1.5rem; font-weight:900; color:#ef4444; margin-bottom:0.5rem;">EXAM DISQUALIFIED / TERMINATED</h3>
+      <p style="font-size:1rem; color:#cbd5e1; line-height:1.5; margin-bottom:1.5rem;">
+        You exceeded the limit of 3 window switch violations. Your exam has been locked and submitted to the invigilator.
+      </p>
+      <button class="btn btn-secondary" onclick="handleLogout()">Exit Terminal</button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: CONFIRM SUBMISSION
+       ========================================================================= -->
+  <div id="modal-submit" class="modal-overlay">
+    <div class="modal-box">
+      <h3 style="font-size:1.3rem; font-weight:800; color:#0f172a; margin-bottom:0.75rem;">Confirm Final Submission</h3>
+      <p style="font-size:0.95rem; color:#64748b; margin-bottom:1.25rem;">
+        Are you sure you want to finish and submit your test? Once submitted, your score and elapsed time are finalized.
+      </p>
+
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; margin-bottom:1.5rem;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem; font-size:0.95rem;">
+          <span style="color:#64748b;">Answered Questions:</span>
+          <strong id="modal-ans-count" style="color:#10b981;">0</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem; font-size:0.95rem;">
+          <span style="color:#64748b;">Unanswered Questions:</span>
+          <strong id="modal-unans-count" style="color:#dc2626;">0</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:0.95rem;">
+          <span style="color:#64748b;">Marked for Review:</span>
+          <strong id="modal-rev-count" style="color:#d97706;">0</strong>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+        <button class="btn btn-secondary" onclick="closeSubmitModal()">Resume Test</button>
+        <button class="btn btn-success" onclick="confirmFinalSubmit()">Yes, Submit Test</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/quiz.js"></script>
+</body>
+</html>
