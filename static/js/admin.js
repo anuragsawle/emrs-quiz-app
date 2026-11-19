@@ -234,6 +234,8 @@ function renderFinalConsole(state) {
   const firstSlot = state.first_team_slot;
   const finalists = state.finalists || [];
   const status = state.question_status;
+  const isEnded = status === "ended" || Boolean(state.is_locked);
+  const lockInfo = state.lock_info || {};
   const passHistory = state.pass_history || [];
 
   // 1. Update 5 Competition Round Buttons
@@ -269,8 +271,6 @@ function renderFinalConsole(state) {
     const hideBtn = document.getElementById("btn-hide-question");
     const isMediaQ = Boolean(state.is_media_question || q.is_media_question);
     const isOptsVis = state.is_options_visible !== undefined ? Boolean(state.is_options_visible) : Boolean(state.is_question_visible);
-    const isEnded = status === "ended" || Boolean(state.is_locked);
-    const lockInfo = state.lock_info || {};
 
     // Host Console Locked Question Banner
     const lockedBanner = document.getElementById("console-locked-status-banner");
@@ -515,15 +515,24 @@ function renderAdminFinalScoreboard(finalists) {
   if (!tbody) return;
   tbody.innerHTML = "";
 
-  const sorted = [...finalists].sort((a, b) => b.final_score - a.final_score);
+  const list = (finalists && finalists.length > 0)
+    ? finalists
+    : ((currentFinalState && currentFinalState.finalists) || []);
+
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:1.2rem; font-size:0.9rem;">No finalists loaded yet. Please promote 6 finalists from the Qualifier tab.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...list].sort((a, b) => b.final_score - a.final_score);
   sorted.forEach((team, rank) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>#${rank + 1}</td>
+      <td style="font-weight:700; color:#94a3b8;">#${rank + 1}</td>
       <td><strong>[T${team.finalist_slot}]</strong> ${team.name}</td>
-      <td style="font-weight:700; color:#f59e0b; font-size:1.1rem;">${team.final_score}</td>
+      <td style="font-weight:800; color:#f59e0b; font-size:1.15rem;">${team.final_score}</td>
       <td>
-        <button class="btn btn-secondary" style="padding:0.25rem 0.5rem; font-size:0.75rem;" onclick="promptScoreAdjust(${team.id}, '${team.name}')">Adjust</button>
+        <button class="btn btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem; border-radius:4px;" onclick="promptScoreAdjust(${team.id}, '${team.name}')">&#9998; Adjust</button>
       </td>
     `;
     tbody.appendChild(tr);
