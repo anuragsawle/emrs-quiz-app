@@ -566,7 +566,7 @@ class AdminQuestionsHandler(BaseHandler):
         if round_type in ("screening", "qualifier"):
             rows = conn.execute("SELECT * FROM questions WHERE round_type IN ('screening', 'qualifier') ORDER BY question_number ASC;").fetchall()
         elif round_type in ("projector", "final"):
-            rows = conn.execute("SELECT * FROM questions WHERE round_type IN ('projector', 'final') ORDER BY question_number ASC;").fetchall()
+            rows = QuizEngine.get_final_questions(conn)
         elif round_type and round_type != "all":
             rows = conn.execute("SELECT * FROM questions WHERE round_type = ? ORDER BY question_number ASC;", (round_type,)).fetchall()
         else:

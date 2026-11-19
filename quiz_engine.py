@@ -474,6 +474,33 @@ class QuizEngine:
         return order
 
     @staticmethod
+    def get_final_questions(conn):
+        """
+        Returns all final round projector questions strictly grouped by competition round:
+        Round 1: Indian Culture
+        Round 2: Indian Heritage
+        Round 3: Tribal Traditions
+        Round 4: Audio Round
+        Round 5: Visual Round
+        Sorted by round priority, question_number ASC, and id ASC.
+        """
+        return conn.execute("""
+            SELECT * FROM questions
+            WHERE round_type IN ('final', 'projector')
+            ORDER BY 
+                CASE 
+                    WHEN LOWER(media_type) = 'audio' OR LOWER(category) LIKE '%audio%' THEN 4
+                    WHEN LOWER(media_type) = 'image' OR LOWER(category) LIKE '%visual%' OR LOWER(category) LIKE '%image%' THEN 5
+                    WHEN LOWER(category) LIKE '%culture%' THEN 1
+                    WHEN LOWER(category) LIKE '%heritage%' THEN 2
+                    WHEN LOWER(category) LIKE '%tribal%' THEN 3
+                    ELSE 1
+                END ASC,
+                question_number ASC,
+                id ASC;
+        """).fetchall()
+
+    @staticmethod
     def get_final_round_state():
         """
         Returns full state of the Final Round including:
@@ -506,11 +533,7 @@ class QuizEngine:
             """).fetchall()
 
         # Fetch all final round questions
-        questions = conn.execute("""
-            SELECT * FROM questions
-            WHERE round_type IN ('final', 'projector')
-            ORDER BY question_number ASC;
-        """).fetchall()
+        questions = QuizEngine.get_final_questions(conn)
 
         q_idx = f_state["question_index"]
         if q_idx >= len(questions) and len(questions) > 0:
@@ -713,7 +736,7 @@ class QuizEngine:
     @staticmethod
     def load_final_round(round_number: int):
         conn = get_db()
-        questions = conn.execute("SELECT * FROM questions WHERE round_type IN ('final', 'projector') ORDER BY question_number ASC;").fetchall()
+        questions = QuizEngine.get_final_questions(conn)
         conn.close()
 
         rounds_summary = QuizEngine.get_projector_rounds_info(questions)
@@ -742,7 +765,7 @@ class QuizEngine:
         """
         conn = get_db()
         comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
-        questions = conn.execute("SELECT * FROM questions WHERE round_type IN ('final', 'projector') ORDER BY question_number ASC;").fetchall()
+        questions = QuizEngine.get_final_questions(conn)
 
         if question_index < 0 or question_index >= len(questions):
             conn.close()
@@ -819,7 +842,7 @@ class QuizEngine:
             conn.close()
             return True, None
 
-        questions = conn.execute("SELECT * FROM questions WHERE round_type IN ('final', 'projector') ORDER BY question_number ASC;").fetchall()
+        questions = QuizEngine.get_final_questions(conn)
 
         q_idx = f_state["question_index"]
         q_row = questions[q_idx] if 0 <= q_idx < len(questions) else None
@@ -1385,7 +1408,7 @@ class QuizEngine:
     def unlock_final_question(question_index: int):
         """Allows host in Admin console to reopen/unlock an answered question if needed."""
         conn = get_db()
-        questions = conn.execute("SELECT * FROM questions WHERE round_type IN ('final', 'projector') ORDER BY question_number ASC;").fetchall()
+        questions = QuizEngine.get_final_questions(conn)
         if 0 <= question_index < len(questions):
             q_id = questions[question_index]["id"]
             conn.execute("DELETE FROM final_question_results WHERE question_id = ? OR question_index = ?;", (q_id, question_index))
