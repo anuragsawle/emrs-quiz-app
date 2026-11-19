@@ -386,7 +386,8 @@ body {
   background-color: #080c16;
   color: #ffffff;
   overflow-x: hidden;
-  height: 100vh;
+  overflow-y: auto;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -398,6 +399,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .projector-main {
@@ -405,8 +407,9 @@ body {
   display: grid;
   grid-template-columns: 1fr 380px;
   gap: 1.5rem;
-  padding: 1.5rem 2rem;
-  overflow: hidden;
+  padding: 1.5rem 2rem 2.5rem;
+  overflow: visible;
+  align-items: start;
 }
 
 .projector-question-area {
@@ -418,6 +421,7 @@ body {
   border-radius: var(--radius-lg);
   padding: 2rem;
   box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+  min-width: 0;
 }
 
 .active-team-spotlight {

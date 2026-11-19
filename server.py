@@ -403,11 +403,14 @@ class AdminFinalTimerControlHandler(BaseHandler):
 class AdminFinalRevealQuestionHandler(BaseHandler):
     async def post(self):
         data = tornado.escape.json_decode(self.request.body)
-        action = data.get("action", "reveal") # 'reveal' or 'hide'
+        action = data.get("action", "reveal") # 'reveal', 'reveal_options', or 'hide'
 
         sound = None
         if action == "reveal":
             QuizEngine.reveal_final_question(auto_start_timer=True)
+            sound = "CHIME"
+        elif action == "reveal_options":
+            QuizEngine.reveal_final_options(auto_start_timer=True)
             sound = "CHIME"
         else:
             QuizEngine.hide_final_question()
@@ -425,13 +428,14 @@ class AdminFinalAdjudicateHandler(BaseHandler):
     async def post(self):
         data = tornado.escape.json_decode(self.request.body)
         decision = data.get("decision")
+        selected_option = data.get("selected_option", None)
 
         sound = None
         if decision == "correct":
             ok, err = QuizEngine.mark_final_correct()
             sound = "CORRECT"
         elif decision == "incorrect":
-            ok, err = QuizEngine.mark_final_incorrect()
+            ok, err = QuizEngine.mark_final_incorrect(selected_option=selected_option)
             sound = "WRONG"
         elif decision == "timeout_or_pass":
             ok, err = QuizEngine.handle_final_timeout_or_pass()
@@ -472,6 +476,17 @@ class AdminScoreAdjustHandler(BaseHandler):
         await broadcast_ws({
             "type": "FINAL_STATE_UPDATE",
             "event": "SCORE_ADJUSTED",
+            "data": state
+        })
+        self.write({"success": True, "state": state})
+
+class AdminFinalResetScoresHandler(BaseHandler):
+    async def post(self):
+        QuizEngine.reset_final_scores()
+        state = QuizEngine.get_final_round_state()
+        await broadcast_ws({
+            "type": "FINAL_STATE_UPDATE",
+            "event": "SCORES_RESET",
             "data": state
         })
         self.write({"success": True, "state": state})
@@ -1074,6 +1089,7 @@ def make_app():
         (r"/api/admin/final/timer", AdminFinalTimerControlHandler),
         (r"/api/admin/final/adjudicate", AdminFinalAdjudicateHandler),
         (r"/api/admin/final/score/adjust", AdminScoreAdjustHandler),
+        (r"/api/admin/final/reset_scores", AdminFinalResetScoresHandler),
 
         # Questions & Teams Management
         (r"/api/admin/questions", AdminQuestionsHandler),

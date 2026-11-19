@@ -164,14 +164,19 @@ def init_db():
         pass_history_json TEXT NOT NULL DEFAULT '[]', -- List of {slot, result: 'timeout'|'incorrect'|'correct'}
         question_status TEXT NOT NULL DEFAULT 'idle', -- 'idle', 'in_progress', 'paused', 'ended'
         is_question_visible INTEGER NOT NULL DEFAULT 0, -- 0 = hidden on projector, 1 = shown
+        is_options_visible INTEGER NOT NULL DEFAULT 0, -- 0 = options hidden (audio/visual step 1), 1 = options shown
         winning_team_slot INTEGER NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
 
-    # Safe migration for is_question_visible
+    # Safe migration for is_question_visible & is_options_visible
     try:
         cursor.execute("ALTER TABLE final_round_state ADD COLUMN is_question_visible INTEGER NOT NULL DEFAULT 0;")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE final_round_state ADD COLUMN is_options_visible INTEGER NOT NULL DEFAULT 0;")
     except Exception:
         pass
 

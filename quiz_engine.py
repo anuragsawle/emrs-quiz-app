@@ -581,6 +581,10 @@ class QuizEngine:
             else:
                 r["is_active"] = False
 
+        is_media = QuizEngine.is_media_question(questions[q_idx]) if 0 <= q_idx < len(questions) else False
+        is_q_vis = bool(f_state["is_question_visible"]) if "is_question_visible" in f_state.keys() else False
+        is_opt_vis = bool(f_state["is_options_visible"]) if "is_options_visible" in f_state.keys() else is_q_vis
+
         if current_q:
             current_q["round_number"] = current_round["round_number"] if current_round else 1
             current_q["round_name"] = current_round["name"] if current_round else "Indian Culture"
@@ -588,6 +592,7 @@ class QuizEngine:
             current_q["round_color"] = current_round["color"] if current_round else "#10b981"
             current_q["round_question_index"] = round_q_idx
             current_q["round_total_questions"] = round_total_q
+            current_q["is_media_question"] = is_media
 
         result = {
             "competition": dict(comp),
@@ -604,7 +609,9 @@ class QuizEngine:
             "current_marks": current_marks,
             "time_remaining_seconds": time_remaining,
             "timer_is_running": bool(f_state["timer_is_running"]),
-            "is_question_visible": bool(f_state["is_question_visible"]) if "is_question_visible" in f_state.keys() else False,
+            "is_question_visible": is_q_vis,
+            "is_options_visible": is_opt_vis,
+            "is_media_question": is_media,
             "question_status": f_state["question_status"], # 'idle', 'in_progress', 'paused', 'ended'
             "winning_team_slot": f_state["winning_team_slot"],
             "pass_history": pass_history,
@@ -616,6 +623,15 @@ class QuizEngine:
 
         conn.close()
         return result
+
+    @staticmethod
+    def is_media_question(q_row):
+        """Returns True if the question is an Audio or Visual (Image) question."""
+        if not q_row:
+            return False
+        media = (q_row["media_type"] or "").strip().lower() if "media_type" in q_row.keys() else "none"
+        cat = (q_row["category"] or "").strip().lower() if "category" in q_row.keys() else ""
+        return media in ("audio", "image") or "audio" in cat or "visual" in cat or "image" in cat
 
     @staticmethod
     def get_projector_rounds_info(questions):
@@ -723,6 +739,7 @@ class QuizEngine:
             pass_history_json = '[]',
             question_status = 'idle',
             is_question_visible = 0,
+            is_options_visible = 0,
             winning_team_slot = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1;
@@ -736,19 +753,41 @@ class QuizEngine:
     def reveal_final_question(auto_start_timer=True):
         """
         Reveals the question on the Projector Screen.
-        Immediately upon reveal, automatically starts the 60-second main timer.
+        - For Text questions: immediately shows question + options and starts the 60s timer.
+        - For Audio / Visual questions: shows media + question FIRST (options stay hidden
+          and timer stays paused until reveal_final_options() is triggered).
         """
         conn = get_db()
         comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
         f_state = conn.execute("SELECT * FROM final_round_state WHERE id = 1;").fetchone()
+        questions = conn.execute("SELECT * FROM questions WHERE round_type IN ('final', 'projector') ORDER BY question_number ASC;").fetchall()
+
+        q_idx = f_state["question_index"]
+        q_row = questions[q_idx] if 0 <= q_idx < len(questions) else None
+        is_media = QuizEngine.is_media_question(q_row)
 
         main_duration = comp["final_main_timer_seconds"] # 60
         now_ms = int(time.time() * 1000)
 
-        if auto_start_timer:
+        if is_media:
+            # Step 1 for Audio/Visual: show media & question only; do NOT show options or start timer yet!
             conn.execute("""
             UPDATE final_round_state SET
                 is_question_visible = 1,
+                is_options_visible = 0,
+                turn_type = 'main',
+                timer_is_running = 0,
+                time_remaining_seconds = ?,
+                timer_started_at_ms = 0,
+                question_status = 'idle',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1;
+            """, (main_duration,))
+        elif auto_start_timer:
+            conn.execute("""
+            UPDATE final_round_state SET
+                is_question_visible = 1,
+                is_options_visible = 1,
                 turn_type = 'main',
                 timer_is_running = 1,
                 time_remaining_seconds = ?,
@@ -761,6 +800,7 @@ class QuizEngine:
             conn.execute("""
             UPDATE final_round_state SET
                 is_question_visible = 1,
+                is_options_visible = 1,
                 turn_type = 'main',
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = 1;
@@ -770,14 +810,51 @@ class QuizEngine:
         return True, None
 
     @staticmethod
+    def reveal_final_options(auto_start_timer=True):
+        """
+        Step 2 for Audio & Visual questions:
+        Reveals the 4 answer options on the Projector Screen and starts the 60-second timer.
+        """
+        conn = get_db()
+        comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
+        main_duration = comp["final_main_timer_seconds"] # 60
+        now_ms = int(time.time() * 1000)
+
+        if auto_start_timer:
+            conn.execute("""
+            UPDATE final_round_state SET
+                is_question_visible = 1,
+                is_options_visible = 1,
+                turn_type = 'main',
+                timer_is_running = 1,
+                time_remaining_seconds = ?,
+                timer_started_at_ms = ?,
+                question_status = 'in_progress',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1;
+            """, (main_duration, now_ms))
+        else:
+            conn.execute("""
+            UPDATE final_round_state SET
+                is_question_visible = 1,
+                is_options_visible = 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1;
+            """)
+        conn.commit()
+        conn.close()
+        return True, None
+
+    @staticmethod
     def hide_final_question():
-        """Hides the question from the Projector Screen and stops the timer."""
+        """Hides the question & options from the Projector Screen and stops the timer."""
         conn = get_db()
         comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
         main_duration = comp["final_main_timer_seconds"]
         conn.execute("""
         UPDATE final_round_state SET
             is_question_visible = 0,
+            is_options_visible = 0,
             turn_type = 'main',
             timer_is_running = 0,
             timer_started_at_ms = 0,
@@ -944,43 +1021,84 @@ class QuizEngine:
         return True, None
 
     @staticmethod
-    def mark_final_incorrect():
+    def mark_final_incorrect(selected_option=None):
         """
         Adjudication: Incorrect Answer.
-        CRITICAL SPEC RULE (Section 2.2 & 8):
-        - 'The question ends immediately. No passing opportunity is given.'
-        - 'Passing turn - incorrect: The question ends immediately.'
-        - 'An incorrect answer ends the question immediately; only a timeout triggers the next passing turn.'
+        Rule:
+        - Main turn incorrect: pass to 1st passing team (5 seconds, 5 marks).
+        - 1st pass incorrect: pass to 2nd passing team (5 seconds, 2 marks).
+        - 2nd pass incorrect: only 2 passes allowed! Question ends immediately with 0 marks.
         """
         conn = get_db()
         f_state = conn.execute("SELECT * FROM final_round_state WHERE id = 1;").fetchone()
+        comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
 
         if f_state["question_status"] == "ended":
             conn.close()
             return False, "Question is already ended."
 
         active_slot = f_state["active_team_slot"]
+        first_slot = f_state["first_team_slot"]
         team = QuizEngine.get_team_for_slot(conn, active_slot)
         team_name = team["name"] if team else f"Team {active_slot}"
 
         pass_hist = json.loads(f_state["pass_history_json"])
-        pass_hist.append({"slot": active_slot, "team_name": team_name, "result": "incorrect", "marks": 0})
+        entry = {"slot": active_slot, "team_name": team_name, "result": "incorrect", "marks": 0}
+        if selected_option is not None:
+            entry["selected_option"] = int(selected_option)
+        pass_hist.append(entry)
 
-        # Question ends immediately!
-        conn.execute("""
-        UPDATE final_round_state SET
-            timer_is_running = 0,
-            question_status = 'ended',
-            winning_team_slot = NULL,
-            pass_history_json = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = 1;
-        """, (json.dumps(pass_hist),))
+        # Calculate passing sequence (only 2 passes allowed)
+        max_passes = 2
+        passing_order = QuizEngine.get_passing_order_for_slot(first_slot, 6)[:max_passes]
 
-        conn.execute("""
-        INSERT INTO audit_events (event_type, details)
-        VALUES ('FINAL_INCORRECT', ?);
-        """, (f"Team {team_name} gave incorrect answer on Q{f_state['question_index']+1}. Question ended immediately.",))
+        attempted_slots = {item["slot"] for item in pass_hist}
+
+        next_slot = None
+        if len(pass_hist) <= max_passes:
+            for slot in passing_order:
+                if slot not in attempted_slots:
+                    next_slot = slot
+                    break
+
+        if next_slot is not None:
+            # Advance to next team in passing turn (5 seconds)
+            pass_duration = comp["final_pass_timer_seconds"]
+            now_ms = int(time.time() * 1000)
+
+            conn.execute("""
+            UPDATE final_round_state SET
+                active_team_slot = ?,
+                turn_type = 'pass',
+                time_remaining_seconds = ?,
+                timer_is_running = 1,
+                timer_started_at_ms = ?,
+                question_status = 'in_progress',
+                pass_history_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1;
+            """, (next_slot, pass_duration, now_ms, json.dumps(pass_hist)))
+
+            conn.execute("""
+            INSERT INTO audit_events (event_type, details)
+            VALUES ('FINAL_INCORRECT_PASS', ?);
+            """, (f"Team {team_name} (T{active_slot}) gave incorrect answer on Q{f_state['question_index']+1}. Passed to T{next_slot} (Pass {len(pass_hist)}/2, {pass_duration}s timer started).",))
+        else:
+            # Only 2 passes allowed: after 2nd pass answers incorrectly, question ends with 0 marks!
+            conn.execute("""
+            UPDATE final_round_state SET
+                timer_is_running = 0,
+                question_status = 'ended',
+                winning_team_slot = NULL,
+                pass_history_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1;
+            """, (json.dumps(pass_hist),))
+
+            conn.execute("""
+            INSERT INTO audit_events (event_type, details)
+            VALUES ('FINAL_INCORRECT', ?);
+            """, (f"Team {team_name} (T{active_slot}) gave incorrect answer on Q{f_state['question_index']+1}. Max passes (2) reached; question ended with 0 marks.",))
 
         conn.commit()
         conn.close()
@@ -1094,6 +1212,20 @@ class QuizEngine:
         VALUES ('SCORE_ADJUSTMENT', ?);
         """, (f"Manual score adjustment for {team['name']}: {delta:+d} points. Reason: {reason}",))
 
+        conn.commit()
+        conn.close()
+        return True, None
+
+    @staticmethod
+    def reset_final_scores():
+        """Resets all teams' Projector / Final Quiz scores to 0 without affecting teams, finalists, or questions."""
+        conn = get_db()
+        conn.execute("UPDATE teams SET final_score = 0;")
+        conn.execute("DELETE FROM score_transactions WHERE round_type = 'final';")
+        conn.execute("""
+        INSERT INTO audit_events (event_type, details)
+        VALUES ('FINAL_SCORES_RESET', 'Host reset all Projector Quiz (Final Round) scores to 0.');
+        """)
         conn.commit()
         conn.close()
         return True, None

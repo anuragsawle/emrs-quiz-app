@@ -61,7 +61,22 @@ function handleWsMessage(msg) {
     renderProjectorState(currentState);
   } else if (msg.type === "FINAL_STATE_UPDATE") {
     currentState = msg.data;
+    if (msg.event === "LOAD_QUESTION" || msg.event === "LOAD_ROUND") {
+      closeWrongPassOverlay();
+    }
     renderProjectorState(currentState);
+
+    // If wrong answer -> pass was triggered from Admin Console, flash stage toast banner
+    if (msg.event === "ADJUDICATE_INCORRECT" && currentState && currentState.question_status === "in_progress") {
+      if (!justConfirmedLocalWrongPass) {
+        const nextTeam = currentState.active_team;
+        const nextName = nextTeam ? `[T${currentState.active_team_slot}] ${nextTeam.name}` : `Team ${currentState.active_team_slot}`;
+        const pCount = (currentState.pass_history || []).length;
+        const nextMarks = currentState.current_marks || (pCount === 1 ? 5 : 2);
+        showProjectorPassToast(`❌ WRONG ANSWER! Passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks)`);
+      }
+      justConfirmedLocalWrongPass = false;
+    }
 
     // Audio triggers
     if (msg.sound === "CORRECT") {
@@ -172,12 +187,34 @@ function renderProjectorState(state) {
       catBadge.textContent = q.category || "General";
     }
 
+    const isOptionsVisible = state.is_options_visible !== undefined ? Boolean(state.is_options_visible) : isVisible;
+    const isMediaQuestion = Boolean(state.is_media_question || q.is_media_question);
+    const showOptionsPrompt = document.getElementById("projector-show-options-prompt");
+    const hiddenIcon = document.getElementById("projector-hidden-icon");
+    const hiddenDesc = document.getElementById("projector-hidden-desc");
+    const mainShowBtn = document.getElementById("projector-main-show-btn");
+    const answerHint = document.getElementById("projector-answer-hint");
+
     if (!isVisible) {
       if (hiddenPrompt) hiddenPrompt.style.display = "block";
+      if (showOptionsPrompt) showOptionsPrompt.style.display = "none";
+      if (answerHint) answerHint.style.display = "none";
+
+      if (isMediaQuestion) {
+        if (hiddenIcon) hiddenIcon.innerHTML = q.media_type === "audio" ? "&#127925;" : "&#128444;&#65039;";
+        if (hiddenDesc) hiddenDesc.textContent = "Click below to display the media & question first. Then click Show Options to start the 60-second timer.";
+        if (mainShowBtn) mainShowBtn.innerHTML = "&#128065;&#65039; SHOW MEDIA &amp; QUESTION";
+      } else {
+        if (hiddenIcon) hiddenIcon.innerHTML = "&#127917;";
+        if (hiddenDesc) hiddenDesc.textContent = "Click the button below to display the question to the teams and start the 60-second timer.";
+        if (mainShowBtn) mainShowBtn.innerHTML = "&#128065;&#65039; SHOW QUESTION &bull; START TIMER";
+      }
+
       if (qTextEl) qTextEl.style.display = "none";
       if (mediaContainer) {
         mediaContainer.style.display = "none";
         mediaContainer.innerHTML = "";
+        mediaContainer.dataset.mediaKey = "";
       }
       if (optContainer) optContainer.style.display = "none";
       if (explBox) explBox.style.display = "none";
@@ -189,28 +226,34 @@ function renderProjectorState(state) {
         qTextEl.style.display = "block";
         qTextEl.textContent = q.text;
       }
-      if (optContainer) optContainer.style.display = "grid";
 
       // Render Question Media (Image or Audio for Projector Quiz)
       const audioPlayer = document.getElementById("projector-audio-player");
 
       if (mediaContainer) {
+        const mediaKey = `${q.id || state.question_index}:${q.media_type}:${q.media_url || ""}`;
         if (q.media_type === "image" && q.media_url) {
           mediaContainer.style.display = "block";
-          mediaContainer.innerHTML = `
-            <img src="${q.media_url}" alt="Question Image" style="max-height:280px; max-width:100%; border-radius:12px; border:2px solid #38bdf8; box-shadow:0 0 35px rgba(56, 189, 248, 0.4); object-fit:contain;">
-          `;
+          if (mediaContainer.dataset.mediaKey !== mediaKey) {
+            mediaContainer.dataset.mediaKey = mediaKey;
+            mediaContainer.innerHTML = `
+              <img src="${q.media_url}" alt="Question Image" style="max-height:290px; max-width:100%; border-radius:12px; border:2px solid #38bdf8; box-shadow:0 0 35px rgba(56, 189, 248, 0.4); object-fit:contain;">
+            `;
+          }
           if (audioPlayer) audioPlayer.pause();
         } else if (q.media_type === "audio" && q.media_url) {
           mediaContainer.style.display = "block";
-          mediaContainer.innerHTML = `
-            <div style="background:#1e293b; border:2px solid #f59e0b; border-radius:12px; padding:1.25rem 2rem; display:inline-flex; align-items:center; justify-content:center; gap:1.5rem; box-shadow:0 0 30px rgba(245, 158, 11, 0.35);">
-              <button id="projector-audio-btn" class="btn btn-warning" style="font-size:1.15rem; font-weight:800; padding:0.65rem 1.75rem; border-radius:30px;" onclick="toggleProjectorAudio()">
-                &#9654;&#65039; Play Audio Clip
-              </button>
-              <span style="font-size:1.15rem; color:#fde68a; font-weight:700;">&#127925; Listen carefully to the audio clip</span>
-            </div>
-          `;
+          if (mediaContainer.dataset.mediaKey !== mediaKey) {
+            mediaContainer.dataset.mediaKey = mediaKey;
+            mediaContainer.innerHTML = `
+              <div style="background:#1e293b; border:2px solid #f59e0b; border-radius:12px; padding:1.25rem 2rem; display:inline-flex; align-items:center; justify-content:center; gap:1.5rem; box-shadow:0 0 30px rgba(245, 158, 11, 0.35);">
+                <button id="projector-audio-btn" class="btn btn-warning" style="font-size:1.15rem; font-weight:800; padding:0.65rem 1.75rem; border-radius:30px;" onclick="toggleProjectorAudio()">
+                  &#9654;&#65039; Play Audio Clip
+                </button>
+                <span style="font-size:1.15rem; color:#fde68a; font-weight:700;">&#127925; Listen carefully to the audio clip</span>
+              </div>
+            `;
+          }
           if (audioPlayer) {
             const expectedSrc = q.media_url.startsWith("http") ? q.media_url : window.location.origin + q.media_url;
             if (audioPlayer.src !== expectedSrc) {
@@ -220,61 +263,91 @@ function renderProjectorState(state) {
         } else {
           mediaContainer.style.display = "none";
           mediaContainer.innerHTML = "";
+          mediaContainer.dataset.mediaKey = "";
           if (audioPlayer) audioPlayer.pause();
         }
       }
 
-      // Options
-      optContainer.innerHTML = "";
-
-      const letters = ["A", "B", "C", "D"];
-      const isEnded = status === "ended";
-      const answerHint = document.getElementById("projector-answer-hint");
-
-      if (answerHint) {
-        answerHint.style.display = (isVisible && !isEnded) ? "block" : "none";
-      }
-
-      q.options.forEach((optText, idx) => {
-        const card = document.createElement("div");
-        card.className = "projector-opt-card";
-        card.setAttribute("role", "button");
-        card.setAttribute("tabindex", isEnded ? "-1" : "0");
-        card.setAttribute("data-opt-index", idx);
-
-        let tagHtml = "";
-        if (isEnded) {
-          card.classList.add("disabled");
-          if (idx === q.correct_index) {
-            card.classList.add("correct-revealed");
-            tagHtml = `<span class="projector-opt-tag tag-correct">&#10004; CORRECT ANSWER</span>`;
-          } else if (idx === localSelectedOption) {
-            card.classList.add("incorrect-revealed");
-            tagHtml = `<span class="projector-opt-tag tag-incorrect">&#10006; SELECTED (WRONG)</span>`;
-          }
-        } else {
-          // Live interactive option!
-          card.onclick = () => projectorSelectOption(idx);
+      if (!isOptionsVisible) {
+        // Audio / Visual Step 1: Show Media & Question first; show "Show Options" button; timer paused!
+        if (showOptionsPrompt) showOptionsPrompt.style.display = "block";
+        if (optContainer) {
+          optContainer.style.display = "none";
+          optContainer.innerHTML = "";
+        }
+        if (answerHint) answerHint.style.display = "none";
+        if (explBox) explBox.style.display = "none";
+      } else {
+        // Step 2 (or Text question): Show Options & Interactive Answer Cards!
+        if (showOptionsPrompt) showOptionsPrompt.style.display = "none";
+        if (optContainer) {
+          optContainer.style.display = "grid";
+          optContainer.innerHTML = "";
         }
 
-        card.innerHTML = `
-          <div class="projector-opt-letter">${letters[idx]}</div>
-          <div class="projector-opt-text">${optText}</div>
-          ${tagHtml}
-        `;
-        optContainer.appendChild(card);
-      });
+        const letters = ["A", "B", "C", "D"];
+        const isEnded = status === "ended";
 
-      // Explanation if ended
-      if (isEnded && q.explanation) {
-        explBox.style.display = "block";
-        explBox.innerHTML = `<strong>Answer Key:</strong> Option ${letters[q.correct_index]} &bull; ${q.explanation}`;
-      } else {
-        explBox.style.display = "none";
+        // Collect options already chosen incorrectly on earlier turns of this question
+        const wrongSelectedOptions = new Set();
+        (state.pass_history || []).forEach(h => {
+          if (h.result === "incorrect" && h.selected_option !== undefined && h.selected_option !== null) {
+            wrongSelectedOptions.add(Number(h.selected_option));
+          }
+        });
+
+        if (answerHint) {
+          answerHint.style.display = (isVisible && isOptionsVisible && !isEnded) ? "block" : "none";
+        }
+
+        q.options.forEach((optText, idx) => {
+          const card = document.createElement("div");
+          card.className = "projector-opt-card";
+          card.setAttribute("role", "button");
+          const isAlreadyWrong = wrongSelectedOptions.has(idx);
+          card.setAttribute("tabindex", (isEnded || isAlreadyWrong) ? "-1" : "0");
+          card.setAttribute("data-opt-index", idx);
+
+          let tagHtml = "";
+          if (isEnded) {
+            card.classList.add("disabled");
+            if (idx === q.correct_index) {
+              card.classList.add("correct-revealed");
+              tagHtml = `<span class="projector-opt-tag tag-correct">&#10004; CORRECT ANSWER</span>`;
+            } else if (isAlreadyWrong || idx === localSelectedOption) {
+              card.classList.add("incorrect-revealed");
+              tagHtml = `<span class="projector-opt-tag tag-incorrect">&#10006; SELECTED (WRONG)</span>`;
+            }
+          } else if (isAlreadyWrong) {
+            card.classList.add("disabled");
+            card.classList.add("incorrect-revealed");
+            tagHtml = `<span class="projector-opt-tag tag-incorrect">&#10006; WRONG (PASSED)</span>`;
+          } else {
+            // Live interactive option!
+            card.onclick = () => projectorSelectOption(idx);
+          }
+
+          card.innerHTML = `
+            <div class="projector-opt-letter">${letters[idx]}</div>
+            <div class="projector-opt-text">${optText}</div>
+            ${tagHtml}
+          `;
+          optContainer.appendChild(card);
+        });
+
+        // Explanation if ended
+        if (isEnded && q.explanation) {
+          explBox.style.display = "block";
+          explBox.innerHTML = `<strong>Answer Key:</strong> Option ${letters[q.correct_index]} &bull; ${q.explanation}`;
+        } else {
+          explBox.style.display = "none";
+        }
       }
     }
   } else {
     if (hiddenPrompt) hiddenPrompt.style.display = "none";
+    const showOptionsPrompt = document.getElementById("projector-show-options-prompt");
+    if (showOptionsPrompt) showOptionsPrompt.style.display = "none";
     if (qTextEl) {
       qTextEl.style.display = "block";
       qTextEl.textContent = "Awaiting Quiz Master to load Question...";
@@ -339,14 +412,22 @@ function renderProjectorState(state) {
   const btnAdjWrong = document.getElementById("proj-btn-adj-wrong");
   const btnAdjPass = document.getElementById("proj-btn-adj-pass");
 
+  const isOptionsVisibleStage = state.is_options_visible !== undefined ? Boolean(state.is_options_visible) : isVisible;
+  const isMediaQStage = Boolean(state.is_media_question || (q && q.is_media_question));
+  const isReadyToJudge = isVisible && isOptionsVisibleStage && !isEnded;
+
   if (btnPrev) btnPrev.disabled = state.question_index <= 0;
   if (btnNext) btnNext.disabled = state.question_index >= state.total_questions - 1;
 
   if (btnShowToggle) {
     if (!isVisible) {
-      btnShowToggle.textContent = "👁️ Show Question [Space]";
+      btnShowToggle.textContent = isMediaQStage ? "👁️ Show Media & Q [Space]" : "👁️ Show Question [Space]";
       btnShowToggle.className = "btn btn-success";
       btnShowToggle.onclick = projectorShowQuestion;
+    } else if (!isOptionsVisibleStage) {
+      btnShowToggle.textContent = "📋 Show Options & Timer [Space]";
+      btnShowToggle.className = "btn btn-success";
+      btnShowToggle.onclick = projectorShowOptions;
     } else {
       btnShowToggle.textContent = "🔒 Hide Question";
       btnShowToggle.className = "btn btn-secondary";
@@ -355,17 +436,26 @@ function renderProjectorState(state) {
   }
 
   if (btnTimerToggle) {
-    btnTimerToggle.disabled = !isVisible || isEnded;
+    btnTimerToggle.disabled = !isReadyToJudge;
     btnTimerToggle.textContent = state.timer_is_running ? "⏸️ Pause [P]" : "▶️ Resume [P]";
   }
 
   if (btnAdjCorrect) {
-    btnAdjCorrect.disabled = !isVisible || isEnded;
+    btnAdjCorrect.disabled = !isReadyToJudge;
     btnAdjCorrect.innerHTML = `&#10004; Correct (+${currentMarks})`;
   }
-  if (btnAdjWrong) btnAdjWrong.disabled = !isVisible || isEnded;
+  if (btnAdjWrong) {
+    btnAdjWrong.disabled = !isReadyToJudge;
+    if (passCount === 0) {
+      btnAdjWrong.innerHTML = `&#10006; Wrong &rarr; Pass 1 (5pts)`;
+    } else if (passCount === 1) {
+      btnAdjWrong.innerHTML = `&#10006; Wrong &rarr; Pass 2 (2pts)`;
+    } else {
+      btnAdjWrong.innerHTML = `&#10006; Wrong &rarr; End Q (0)`;
+    }
+  }
   if (btnAdjPass) {
-    btnAdjPass.disabled = !isVisible || isEnded;
+    btnAdjPass.disabled = !isReadyToJudge;
     if (passCount === 0) {
       btnAdjPass.innerHTML = `&#9201; Pass to 1st (5s &bull; 5pts) [T]`;
     } else if (passCount === 1) {
@@ -514,6 +604,24 @@ async function projectorShowQuestion() {
   }
 }
 
+async function projectorShowOptions() {
+  try {
+    const res = await fetch("/api/admin/final/reveal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reveal_options" })
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentState = data.state;
+      renderProjectorState(currentState);
+      if (window.quizAudio) window.quizAudio.playReveal();
+    }
+  } catch (e) {
+    console.error("Show options error", e);
+  }
+}
+
 async function projectorHideQuestion() {
   try {
     const res = await fetch("/api/admin/final/reveal", {
@@ -533,6 +641,7 @@ async function projectorHideQuestion() {
 
 async function projectorSelectRound(roundNumber) {
   if (!currentState) return;
+  closeWrongPassOverlay();
   localSelectedOption = null;
   isAnswerRevealed = false;
   try {
@@ -556,6 +665,7 @@ async function projectorNavigate(delta) {
   if (!currentState) return;
   const newIdx = currentState.question_index + delta;
   if (newIdx < 0 || newIdx >= currentState.total_questions) return;
+  closeWrongPassOverlay();
   localSelectedOption = null;
   isAnswerRevealed = false;
   try {
@@ -576,6 +686,7 @@ async function projectorNavigate(delta) {
 
 async function projectorResetQuestion() {
   if (!currentState) return;
+  closeWrongPassOverlay();
   localSelectedOption = null;
   isAnswerRevealed = false;
   try {
@@ -596,20 +707,145 @@ async function projectorResetQuestion() {
 }
 
 let localSelectedOption = null;
+let isOptionSubmitting = false;
+let pendingWrongPass = null;
+let justConfirmedLocalWrongPass = false;
+let passToastTimer = null;
+
+function showProjectorPassToast(text) {
+  const toast = document.getElementById("projector-pass-toast");
+  if (!toast) return;
+  toast.textContent = text;
+  toast.style.display = "block";
+  if (passToastTimer) clearTimeout(passToastTimer);
+  passToastTimer = setTimeout(() => {
+    toast.style.display = "none";
+  }, 3500);
+}
+
+function getNextPassInfo(state) {
+  if (!state) return null;
+  const passHist = state.pass_history || [];
+  const maxPasses = state.max_passes || 2;
+  if (passHist.length >= maxPasses) return null;
+
+  const passingOrder = (state.passing_order || []).slice(0, maxPasses);
+  const attempted = new Set(passHist.map(h => h.slot));
+  attempted.add(state.active_team_slot);
+
+  let nextSlot = null;
+  for (const slot of passingOrder) {
+    if (!attempted.has(slot)) {
+      nextSlot = slot;
+      break;
+    }
+  }
+  if (nextSlot === null) return null;
+
+  const finalistsMap = {};
+  (state.finalists || []).forEach(f => { finalistsMap[f.finalist_slot] = f; });
+  const currTeam = finalistsMap[state.active_team_slot];
+  const nextTeam = finalistsMap[nextSlot];
+  const nextPassNum = passHist.length + 1;
+  const nextMarks = nextPassNum === 1 ? 5 : 2;
+  const passSeconds = (state.competition && state.competition.final_pass_timer_seconds) || 5;
+
+  return {
+    currSlot: state.active_team_slot,
+    currTeamName: currTeam ? `[T${state.active_team_slot}] ${currTeam.name}` : `Team ${state.active_team_slot}`,
+    nextSlot,
+    nextTeamName: nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`,
+    nextPassNum,
+    nextMarks,
+    passSeconds
+  };
+}
+
+function openWrongPassOverlay(info, chosenOptionLetter) {
+  const overlay = document.getElementById("projector-wrong-pass-overlay");
+  const detailEl = document.getElementById("wrong-pass-detail");
+  const nextTeamEl = document.getElementById("wrong-pass-next-team");
+  const nextMetaEl = document.getElementById("wrong-pass-next-meta");
+  const confirmBtn = document.getElementById("btn-confirm-wrong-pass");
+
+  if (detailEl) {
+    if (chosenOptionLetter) {
+      detailEl.textContent = `${info.currTeamName} selected Option ${chosenOptionLetter} — Wrong Answer! Question is passed to the next team.`;
+    } else {
+      detailEl.textContent = `${info.currTeamName} gave a Wrong Answer! Question is passed to the next team.`;
+    }
+  }
+  if (nextTeamEl) {
+    nextTeamEl.textContent = info.nextTeamName;
+  }
+  if (nextMetaEl) {
+    nextMetaEl.textContent = `PASS ${info.nextPassNum} OF 2 • ${info.nextMarks} MARKS • ${info.passSeconds}s TIMER`;
+  }
+  if (confirmBtn) {
+    confirmBtn.innerHTML = `&#10145;&#65039; Pass to ${info.nextTeamName} &amp; Start ${info.passSeconds}s Timer [Enter]`;
+  }
+  if (overlay) {
+    overlay.style.display = "flex";
+  }
+}
+
+function closeWrongPassOverlay() {
+  pendingWrongPass = null;
+  const overlay = document.getElementById("projector-wrong-pass-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+async function confirmPendingWrongPass() {
+  if (!pendingWrongPass || isOptionSubmitting) return;
+  const payload = { ...pendingWrongPass };
+  closeWrongPassOverlay();
+
+  isOptionSubmitting = true;
+  justConfirmedLocalWrongPass = true;
+  if (window.quizAudio) window.quizAudio.playPass();
+
+  try {
+    const res = await fetch("/api/admin/final/adjudicate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success && data.state) {
+      currentState = data.state;
+      renderProjectorState(currentState);
+    }
+  } catch (err) {
+    console.error("Confirm wrong pass error:", err);
+  } finally {
+    isOptionSubmitting = false;
+  }
+}
 
 async function projectorSelectOption(idx) {
+  if (isOptionSubmitting || pendingWrongPass) return;
   if (!currentState || !currentState.question) return;
   if (!currentState.is_question_visible) {
     projectorShowQuestion();
     return;
   }
+  if (!currentState.is_options_visible) return;
   if (currentState.question_status === "ended") return;
+
+  // Prevent clicking an option already eliminated as wrong in this question
+  const alreadyWrong = (currentState.pass_history || []).some(
+    h => h.result === "incorrect" && Number(h.selected_option) === idx
+  );
+  if (alreadyWrong) return;
 
   const q = currentState.question;
   const isCorrect = (idx === q.correct_index);
   localSelectedOption = idx;
 
   const passCount = (currentState.pass_history || []).length;
+  const maxPasses = currentState.max_passes || 2;
+  const nextPassInfo = !isCorrect ? getNextPassInfo(currentState) : null;
+  const willEndQuestion = isCorrect || !nextPassInfo;
   const currentMarks = currentState.current_marks || (passCount === 0 ? 10 : (passCount === 1 ? 5 : 2));
 
   // Immediate visual feedback on stage
@@ -628,15 +864,19 @@ async function projectorSelectOption(idx) {
         `;
       } else {
         c.classList.add("incorrect-revealed");
+        const wrongTag = willEndQuestion
+          ? `&#10006; INCORRECT (0)`
+          : `&#10006; WRONG &rarr; PASSING!`;
         c.innerHTML = `
           <div class="projector-opt-letter">${letters[cIdx]}</div>
           <div class="projector-opt-text">${q.options[cIdx]}</div>
-          <span class="projector-opt-tag tag-incorrect">&#10006; INCORRECT (0)</span>
+          <span class="projector-opt-tag tag-incorrect">${wrongTag}</span>
         `;
       }
     }
-    // Also highlight the true correct answer if wrong answer was chosen
-    if (!isCorrect && cIdx === q.correct_index) {
+    // Only reveal the true correct answer when the question actually ends!
+    // (Do NOT reveal if passing to another team!)
+    if (!isCorrect && willEndQuestion && cIdx === q.correct_index) {
       c.classList.add("correct-revealed");
       c.innerHTML = `
         <div class="projector-opt-letter">${letters[cIdx]}</div>
@@ -653,13 +893,30 @@ async function projectorSelectOption(idx) {
     if (window.quizAudio) window.quizAudio.playWrong();
   }
 
-  // Submit adjudication to server
+  // If wrong answer and passes remain: pause timer & show Wrong Answer -> Pass Alert BEFORE passing!
+  if (!isCorrect && nextPassInfo) {
+    pendingWrongPass = { decision: "incorrect", selected_option: idx };
+    try {
+      await fetch("/api/admin/final/timer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pause" })
+      });
+    } catch (e) {
+      console.error("Pause before wrong pass error:", e);
+    }
+    openWrongPassOverlay(nextPassInfo, letters[idx]);
+    return;
+  }
+
+  // Submit adjudication immediately if correct OR max passes exhausted
+  isOptionSubmitting = true;
   try {
     const decision = isCorrect ? "correct" : "incorrect";
     const res = await fetch("/api/admin/final/adjudicate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision })
+      body: JSON.stringify({ decision, selected_option: idx })
     });
     const data = await res.json();
     if (data.success && data.state) {
@@ -668,10 +925,13 @@ async function projectorSelectOption(idx) {
     }
   } catch (err) {
     console.error("Option adjudication error:", err);
+  } finally {
+    isOptionSubmitting = false;
   }
 }
 
 async function projectorAdjudicate(decision) {
+  if (pendingWrongPass || isOptionSubmitting) return;
   if (!currentState || !currentState.question) return;
   if (currentState.question_status === "ended") return;
 
@@ -679,6 +939,21 @@ async function projectorAdjudicate(decision) {
     if (window.quizAudio) window.quizAudio.playCorrect();
   } else if (decision === "incorrect") {
     if (window.quizAudio) window.quizAudio.playWrong();
+    const nextPassInfo = getNextPassInfo(currentState);
+    if (nextPassInfo) {
+      pendingWrongPass = { decision: "incorrect" };
+      try {
+        await fetch("/api/admin/final/timer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "pause" })
+        });
+      } catch (e) {
+        console.error("Pause before wrong pass error:", e);
+      }
+      openWrongPassOverlay(nextPassInfo, null);
+      return;
+    }
   } else if (decision === "timeout_or_pass") {
     if (window.quizAudio) window.quizAudio.playPass();
   }
@@ -770,13 +1045,25 @@ function setupKeyboardShortcuts() {
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
 
+    // If Wrong Answer -> Pass Alert is open, Enter or Space confirms passing to next team
+    if (pendingWrongPass) {
+      if (e.key === "Enter" || e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        confirmPendingWrongPass();
+      }
+      return;
+    }
+
     const key = e.key.toUpperCase();
-    const isQuestionActive = currentState && currentState.is_question_visible && currentState.question_status !== "ended";
+    const isOptionsVis = currentState && (currentState.is_options_visible !== undefined ? currentState.is_options_visible : currentState.is_question_visible);
+    const isQuestionActive = currentState && currentState.is_question_visible && isOptionsVis && currentState.question_status !== "ended";
 
     if (key === " " || e.code === "Space" || key === "ENTER") {
       e.preventDefault();
       if (!currentState || !currentState.is_question_visible) {
         projectorShowQuestion();
+      } else if (!isOptionsVis) {
+        projectorShowOptions();
       } else {
         projectorToggleTimer();
       }

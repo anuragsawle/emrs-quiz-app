@@ -247,29 +247,49 @@ function renderFinalConsole(state) {
     // Projector Screen Visibility Indicator & Controls
     const visStatusEl = document.getElementById("console-visibility-status");
     const showBtn = document.getElementById("btn-show-question");
+    const showOptsBtn = document.getElementById("btn-show-options");
     const hideBtn = document.getElementById("btn-hide-question");
+    const isMediaQ = Boolean(state.is_media_question || q.is_media_question);
+    const isOptsVis = state.is_options_visible !== undefined ? Boolean(state.is_options_visible) : Boolean(state.is_question_visible);
 
-    if (state.is_question_visible) {
+    if (state.is_question_visible && !isOptsVis) {
       if (visStatusEl) {
-        visStatusEl.innerHTML = `<span style="color:#10b981;">🟢 LIVE ON PROJECTOR SCREEN</span> <span style="font-size:0.8rem; color:#94a3b8; font-weight:500;">(Visible to Auditorium & Timer Active)</span>`;
+        visStatusEl.innerHTML = `<span style="color:#f59e0b;">🎬 MEDIA &amp; QUESTION SHOWN</span> <span style="font-size:0.8rem; color:#94a3b8; font-weight:500;">(Options hidden • Timer paused until options are revealed)</span>`;
       }
       if (showBtn) {
+        showBtn.style.display = "none";
+      }
+      if (showOptsBtn) {
+        showOptsBtn.style.display = "inline-block";
+      }
+      if (hideBtn) hideBtn.style.display = "inline-block";
+    } else if (state.is_question_visible) {
+      if (visStatusEl) {
+        visStatusEl.innerHTML = `<span style="color:#10b981;">🟢 LIVE ON PROJECTOR SCREEN</span> <span style="font-size:0.8rem; color:#94a3b8; font-weight:500;">(Visible to Auditorium &amp; Timer Active)</span>`;
+      }
+      if (showBtn) {
+        showBtn.style.display = "inline-block";
         showBtn.textContent = "👁️ Question Revealed on Stage";
         showBtn.className = "btn btn-secondary";
         showBtn.style.boxShadow = "none";
         showBtn.disabled = true;
       }
+      if (showOptsBtn) showOptsBtn.style.display = "none";
       if (hideBtn) hideBtn.style.display = "inline-block";
     } else {
       if (visStatusEl) {
         visStatusEl.innerHTML = `<span style="color:#f59e0b;">🔒 HIDDEN ON PROJECTOR SCREEN</span> <span style="font-size:0.8rem; color:#94a3b8; font-weight:500;">(Auditorium waiting for question reveal)</span>`;
       }
       if (showBtn) {
-        showBtn.textContent = "👁️ Show Question on Screen (Starts 60s Timer) [S]";
+        showBtn.style.display = "inline-block";
+        showBtn.textContent = isMediaQ
+          ? "👁️ Show Media & Question First [S]"
+          : "👁️ Show Question on Screen (Starts 60s Timer) [S]";
         showBtn.className = "btn btn-success";
         showBtn.style.boxShadow = "0 0 15px rgba(16, 185, 129, 0.4)";
         showBtn.disabled = false;
       }
+      if (showOptsBtn) showOptsBtn.style.display = "none";
       if (hideBtn) hideBtn.style.display = "none";
     }
 
@@ -356,10 +376,24 @@ function renderFinalConsole(state) {
     turnBadge.textContent = "2ND PASS (5s) • 2 MARKS (FINAL)";
   }
 
-  // Update correct button label
+  // Update correct & incorrect button labels
   const btnCorrect = document.querySelector(".btn-adj-correct span:first-child");
   if (btnCorrect) {
     btnCorrect.innerHTML = `&#10004; CORRECT (+${currentMarks})`;
+  }
+  const btnWrongLabel = document.querySelector(".btn-adj-wrong span:first-child");
+  const btnWrongHint = document.getElementById("btn-wrong-hint");
+  if (btnWrongLabel) {
+    if (passCount === 0) {
+      btnWrongLabel.innerHTML = `&#10008; WRONG &rarr; PASS 1`;
+      if (btnWrongHint) btnWrongHint.textContent = "Key: X or 2 (5s • 5pts)";
+    } else if (passCount === 1) {
+      btnWrongLabel.innerHTML = `&#10008; WRONG &rarr; PASS 2`;
+      if (btnWrongHint) btnWrongHint.textContent = "Key: X or 2 (5s • 2pts)";
+    } else {
+      btnWrongLabel.innerHTML = `&#10008; WRONG (ENDS Q)`;
+      if (btnWrongHint) btnWrongHint.textContent = "Key: X or 2 (Max 2 passes)";
+    }
   }
 
   // Timer & Buttons
@@ -421,6 +455,40 @@ function renderAdminFinalScoreboard(finalists) {
 
 // Host Adjudication Actions
 async function adjudicate(decision) {
+  if (decision === "incorrect" && currentFinalState && currentFinalState.question_status !== "ended") {
+    const passHist = currentFinalState.pass_history || [];
+    const maxPasses = currentFinalState.max_passes || 2;
+    if (passHist.length < maxPasses) {
+      const passingOrder = (currentFinalState.passing_order || []).slice(0, maxPasses);
+      const attempted = new Set(passHist.map(h => h.slot));
+      attempted.add(currentFinalState.active_team_slot);
+      const nextSlot = passingOrder.find(s => !attempted.has(s));
+
+      if (nextSlot !== undefined) {
+        // Pause timer while alert is displayed
+        try {
+          await fetch("/api/admin/final/timer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "pause" })
+          });
+        } catch (e) {}
+
+        const finalistsMap = {};
+        (currentFinalState.finalists || []).forEach(f => { finalistsMap[f.finalist_slot] = f; });
+        const currTeam = finalistsMap[currentFinalState.active_team_slot];
+        const nextTeam = finalistsMap[nextSlot];
+        const currName = currTeam ? `[T${currentFinalState.active_team_slot}] ${currTeam.name}` : `Team ${currentFinalState.active_team_slot}`;
+        const nextName = nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`;
+        const nextPassNum = passHist.length + 1;
+        const nextMarks = nextPassNum === 1 ? 5 : 2;
+        const passSecs = (currentFinalState.competition && currentFinalState.competition.final_pass_timer_seconds) || 5;
+
+        alert(`❌ WRONG ANSWER!\n\n${currName} gave a wrong answer.\nQuestion is passed to ${nextName} (Pass ${nextPassNum}/2 • ${nextMarks} Marks • ${passSecs}s timer).`);
+      }
+    }
+  }
+
   try {
     const res = await fetch("/api/admin/final/adjudicate", {
       method: "POST",
@@ -510,6 +578,47 @@ async function revealQuestionOnProjector() {
     }
   } catch (e) {
     console.error("Reveal question error", e);
+  }
+}
+
+async function revealOptionsOnProjector() {
+  try {
+    const res = await fetch("/api/admin/final/reveal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reveal_options" })
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentFinalState = data.state;
+      renderFinalConsole(currentFinalState);
+    }
+  } catch (e) {
+    console.error("Reveal options error", e);
+  }
+}
+
+async function resetFinalScores() {
+  if (!confirm("Are you sure you want to reset ALL Projector Quiz (Final Round) scores back to 0?\n\nAll teams, finalists, Online Screening scores, and questions will remain intact.")) {
+    return;
+  }
+  try {
+    const res = await fetch("/api/admin/final/reset_scores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentFinalState = data.state;
+      renderFinalConsole(currentFinalState);
+      alert("Projector Quiz scores have been reset to 0.");
+    } else {
+      alert("Error resetting scores: " + (data.error || "Unknown error"));
+    }
+  } catch (e) {
+    console.error("Reset final scores error", e);
+    alert("Network error while resetting scores.");
   }
 }
 
