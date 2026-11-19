@@ -1231,7 +1231,7 @@ class QuizEngine:
         return True, None
 
     @staticmethod
-    def handle_final_timeout_or_pass():
+    def handle_final_timeout_or_pass(start_timer=True):
         """
         Adjudication: Timeout or Pass.
         Rule:
@@ -1282,13 +1282,13 @@ class QuizEngine:
                 active_team_slot = ?,
                 turn_type = 'pass',
                 time_remaining_seconds = ?,
-                timer_is_running = 1,
+                timer_is_running = ?,
                 timer_started_at_ms = ?,
                 question_status = 'in_progress',
                 pass_history_json = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = 1;
-            """, (next_slot, pass_duration, now_ms, json.dumps(pass_hist)))
+            """, (next_slot, pass_duration, 1 if start_timer else 0, now_ms if start_timer else 0, json.dumps(pass_hist)))
 
             conn.execute("""
             INSERT INTO audit_events (event_type, details)

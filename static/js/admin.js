@@ -44,29 +44,23 @@ function connectWebSocket() {
         currentFinalState = msg.data || msg.final_state;
         renderFinalConsole(currentFinalState);
 
-        if (msg.event === "TIME_EXPIRED" && currentFinalState && currentFinalState.question_status === "in_progress") {
-          const passHist = currentFinalState.pass_history || [];
-          const maxPasses = currentFinalState.max_passes || 2;
-          const passingOrder = (currentFinalState.passing_order || []).slice(0, maxPasses);
-          const attempted = new Set(passHist.map(h => h.slot));
-          attempted.add(currentFinalState.active_team_slot);
-          const nextSlot = passingOrder.find(s => !attempted.has(s));
-
-          const finalistsMap = {};
-          (currentFinalState.finalists || []).forEach(f => { finalistsMap[f.finalist_slot] = f; });
-          const currTeam = finalistsMap[currentFinalState.active_team_slot];
-          const currName = currTeam ? `[T${currentFinalState.active_team_slot}] ${currTeam.name}` : `Team ${currentFinalState.active_team_slot}`;
-
-          if (nextSlot !== undefined) {
-            const nextTeam = finalistsMap[nextSlot];
-            const nextName = nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`;
-            const nextPassNum = passHist.length + 1;
-            const nextMarks = nextPassNum === 1 ? 5 : 2;
-            alert(`⏱️ TIME'S UP!\n\nTime expired for ${currName}!\nQuestion is passed to ${nextName} (Pass ${nextPassNum}/2 • ${nextMarks} Marks). Click OK to pass.`);
-            adjudicate("timeout_or_pass");
-          } else {
-            alert(`⏱️ TIME'S UP!\n\nTime expired for ${currName}!\nAll passes exhausted. Question will end with 0 marks.`);
-            adjudicate("timeout_or_pass");
+        if (msg.event === "TIMEOUT" && currentFinalState) {
+          if (currentFinalState.question_status === "in_progress") {
+            const passHist = currentFinalState.pass_history || [];
+            const prevTurn = passHist.slice(-1)[0];
+            const prevTeamName = prevTurn ? prevTurn.team_name : "Previous Team";
+            const nextTeam = currentFinalState.active_team;
+            const nextName = nextTeam ? `[T${currentFinalState.active_team_slot}] ${nextTeam.name}` : `Team ${currentFinalState.active_team_slot}`;
+            const pCount = passHist.length;
+            const nextMarks = currentFinalState.current_marks || (pCount === 1 ? 5 : 2);
+            alert(`⏱️ TIME'S UP!\n\nTime expired for ${prevTeamName}!\nQuestion has passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks • 5s timer).\n\nClick OK to start 5s timer.`);
+            fetch("/api/admin/final/timer", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "start" })
+            });
+          } else if (currentFinalState.question_status === "ended") {
+            alert(`⏱️ TIME'S UP!\n\nTime has expired and all passes are exhausted. Question has ended with 0 marks.`);
           }
         }
       } else if (msg.type === "TIMER_TICK") {

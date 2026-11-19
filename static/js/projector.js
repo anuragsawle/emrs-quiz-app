@@ -66,22 +66,37 @@ function handleWsMessage(msg) {
     }
     renderProjectorState(currentState);
 
-    // If time expired on server countdown
-    if (msg.event === "TIME_EXPIRED" && currentState && currentState.question_status === "in_progress") {
-      const nextPassInfo = getNextPassInfo(currentState);
-      if (nextPassInfo) {
-        pendingWrongPass = { decision: "timeout_or_pass" };
-        openWrongPassOverlay("timeout", nextPassInfo, null);
-      } else {
+    // If time expired on server countdown -> Pass to next team and alert
+    if (msg.event === "TIMEOUT" && currentState) {
+      if (currentState.question_status === "in_progress") {
+        const passHist = currentState.pass_history || [];
+        const prevTurn = passHist.slice(-1)[0];
+        const prevTeamName = prevTurn ? prevTurn.team_name : "Previous Team";
+        const nextTeam = currentState.active_team;
+        const nextName = nextTeam ? `[T${currentState.active_team_slot}] ${nextTeam.name}` : `Team ${currentState.active_team_slot}`;
+        const pCount = passHist.length;
+        const nextMarks = currentState.current_marks || (pCount === 1 ? 5 : 2);
+        const passSecs = (currentState.competition && currentState.competition.final_pass_timer_seconds) || 5;
+
+        showProjectorPassToast(`⏱️ TIME'S UP! Passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks • ${passSecs}s Timer)`);
         try {
-          alert(`⏱️ TIME'S UP!\n\nTime has expired and pass limit reached. Question ends with 0 marks.`);
+          alert(`⏱️ TIME'S UP!\n\nTime expired for ${prevTeamName}!\nQuestion has passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks • ${passSecs}s timer).\n\nClick OK to start 5s timer for ${nextName}.`);
+          fetch("/api/admin/final/timer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "start" })
+          });
         } catch (e) {}
-        projectorAdjudicate("timeout_or_pass");
+      } else if (currentState.question_status === "ended") {
+        showProjectorPassToast(`⏱️ TIME'S UP! Question Ended (0 Marks)`);
+        try {
+          alert(`⏱️ TIME'S UP!\n\nTime has expired and all passes are exhausted. Question has ended with 0 marks.`);
+        } catch (e) {}
       }
     }
 
     // If pass was triggered from Admin Console, flash stage toast banner
-    if ((msg.event === "ADJUDICATE_INCORRECT" || msg.event === "ADJUDICATE_TIMEOUT_OR_PASS" || msg.event === "TIMEOUT") && currentState && currentState.question_status === "in_progress") {
+    if ((msg.event === "ADJUDICATE_INCORRECT" || msg.event === "ADJUDICATE_TIMEOUT_OR_PASS") && currentState && currentState.question_status === "in_progress") {
       if (!justConfirmedLocalWrongPass) {
         const nextTeam = currentState.active_team;
         const nextName = nextTeam ? `[T${currentState.active_team_slot}] ${nextTeam.name}` : `Team ${currentState.active_team_slot}`;
