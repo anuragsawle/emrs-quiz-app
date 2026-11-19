@@ -130,6 +130,32 @@
         <div id="projector-options-grid" class="projector-options-grid"></div>
 
         <!-- Outcome / Explanation when ended -->
+        <div id="projector-locked-card" style="display:none; margin-top:1.5rem; background:linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%); border:2px solid #10b981; border-radius:14px; padding:1.25rem 1.75rem; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; border-bottom:1px solid #334155; padding-bottom:0.75rem; margin-bottom:1rem;">
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+              <span style="font-size:1.6rem;">🔒</span>
+              <div>
+                <div style="font-size:0.8rem; font-weight:800; color:#10b981; text-transform:uppercase; letter-spacing:0.08em;">QUESTION LOCKED &amp; COMPLETED</div>
+                <div id="locked-headline" style="font-size:1.35rem; font-weight:900; color:#ffffff;">Answered Correctly</div>
+              </div>
+            </div>
+            <span id="locked-marks-badge" class="badge badge-green" style="font-size:1.1rem; font-weight:800; padding:0.45rem 1.1rem;">+10 MARKS</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem;">
+            <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.75rem 1rem;">
+              <div style="font-size:0.75rem; text-transform:uppercase; color:#94a3b8; font-weight:700;">Attempted By / Passing Trail:</div>
+              <div id="locked-teams-trail" style="font-size:1.05rem; font-weight:800; color:#f8fafc; margin-top:0.25rem;">Team 1</div>
+            </div>
+            <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.75rem 1rem;">
+              <div style="font-size:0.75rem; text-transform:uppercase; color:#94a3b8; font-weight:700;">Correct Answer:</div>
+              <div id="locked-correct-answer" style="font-size:1.05rem; font-weight:800; color:#34d399; margin-top:0.25rem;">Option A</div>
+            </div>
+            <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.75rem 1rem;">
+              <div style="font-size:0.75rem; text-transform:uppercase; color:#94a3b8; font-weight:700;">Final Status:</div>
+              <div id="locked-final-status" style="font-size:1.05rem; font-weight:800; color:#38bdf8; margin-top:0.25rem;">LOCKED (Cannot be attempted)</div>
+            </div>
+          </div>
+        </div>
         <div id="question-status-banner" style="display:none; margin-top:1.5rem; padding:1rem; border-radius:8px; background:rgba(0,0,0,0.4); text-align:center; font-size:1.3rem;"></div>
         <div id="projector-explanation-box" style="display:none; margin-top:1rem; padding:1rem 1.25rem; border-radius:8px; background:#1e293b; border-left:4px solid #38bdf8; font-size:1.15rem; color:#cbd5e1;"></div>
 

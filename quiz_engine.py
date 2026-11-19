@@ -581,9 +581,30 @@ class QuizEngine:
             else:
                 r["is_active"] = False
 
+        completed_rows = conn.execute("SELECT * FROM final_question_results;").fetchall()
+        completed_map = {}
+        for cr in completed_rows:
+            completed_map[cr["question_index"]] = {
+                "question_id": cr["question_id"],
+                "question_index": cr["question_index"],
+                "status": cr["status"],
+                "winning_team_slot": cr["winning_team_slot"],
+                "winning_team_name": cr["winning_team_name"],
+                "awarded_marks": cr["awarded_marks"],
+                "selected_option": cr["selected_option"],
+                "correct_index": cr["correct_index"],
+                "attempted_by": cr["attempted_by"],
+                "pass_history": json.loads(cr["pass_history_json"]) if cr["pass_history_json"] else []
+            }
+
+        for r in rounds_summary:
+            r["completed_count"] = sum(1 for idx in r["question_indices"] if idx in completed_map)
+
         is_media = QuizEngine.is_media_question(questions[q_idx]) if 0 <= q_idx < len(questions) else False
         is_q_vis = bool(f_state["is_question_visible"]) if "is_question_visible" in f_state.keys() else False
         is_opt_vis = bool(f_state["is_options_visible"]) if "is_options_visible" in f_state.keys() else is_q_vis
+        lock_info = completed_map.get(q_idx, None)
+        is_locked = bool(lock_info) or (f_state["question_status"] == "ended")
 
         if current_q:
             current_q["round_number"] = current_round["round_number"] if current_round else 1
@@ -593,6 +614,8 @@ class QuizEngine:
             current_q["round_question_index"] = round_q_idx
             current_q["round_total_questions"] = round_total_q
             current_q["is_media_question"] = is_media
+            current_q["is_locked"] = is_locked
+            current_q["lock_info"] = lock_info
 
         result = {
             "competition": dict(comp),
@@ -612,6 +635,9 @@ class QuizEngine:
             "is_question_visible": is_q_vis,
             "is_options_visible": is_opt_vis,
             "is_media_question": is_media,
+            "is_locked": is_locked,
+            "lock_info": lock_info,
+            "completed_questions": completed_map,
             "question_status": f_state["question_status"], # 'idle', 'in_progress', 'paused', 'ended'
             "winning_team_slot": f_state["winning_team_slot"],
             "pass_history": pass_history,
@@ -726,24 +752,52 @@ class QuizEngine:
         first_team_slot = (question_index % 6) + 1
         main_timer = comp["final_main_timer_seconds"]
 
-        conn.execute("""
-        UPDATE final_round_state SET
-            current_question_id = ?,
-            question_index = ?,
-            first_team_slot = ?,
-            active_team_slot = ?,
-            turn_type = 'main',
-            time_remaining_seconds = ?,
-            timer_is_running = 0,
-            timer_started_at_ms = 0,
-            pass_history_json = '[]',
-            question_status = 'idle',
-            is_question_visible = 0,
-            is_options_visible = 0,
-            winning_team_slot = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = 1;
-        """, (q_row["id"], question_index, first_team_slot, first_team_slot, main_timer))
+        # Check if question was already completed and locked
+        saved_result = conn.execute("""
+            SELECT * FROM final_question_results WHERE question_id = ? OR question_index = ?;
+        """, (q_row["id"], question_index)).fetchone()
+
+        if saved_result and saved_result["status"] == "ended":
+            conn.execute("""
+            UPDATE final_round_state SET
+                current_question_id = ?,
+                question_index = ?,
+                first_team_slot = ?,
+                active_team_slot = ?,
+                turn_type = 'main',
+                time_remaining_seconds = 0,
+                timer_is_running = 0,
+                timer_started_at_ms = 0,
+                pass_history_json = ?,
+                question_status = 'ended',
+                is_question_visible = 1,
+                is_options_visible = 1,
+                winning_team_slot = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1;
+            """, (q_row["id"], question_index, first_team_slot,
+                  saved_result["winning_team_slot"] or first_team_slot,
+                  saved_result["pass_history_json"],
+                  saved_result["winning_team_slot"]))
+        else:
+            conn.execute("""
+            UPDATE final_round_state SET
+                current_question_id = ?,
+                question_index = ?,
+                first_team_slot = ?,
+                active_team_slot = ?,
+                turn_type = 'main',
+                time_remaining_seconds = ?,
+                timer_is_running = 0,
+                timer_started_at_ms = 0,
+                pass_history_json = '[]',
+                question_status = 'idle',
+                is_question_visible = 0,
+                is_options_visible = 0,
+                winning_team_slot = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1;
+            """, (q_row["id"], question_index, first_team_slot, first_team_slot, main_timer))
 
         conn.commit()
         conn.close()
@@ -760,6 +814,11 @@ class QuizEngine:
         conn = get_db()
         comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
         f_state = conn.execute("SELECT * FROM final_round_state WHERE id = 1;").fetchone()
+
+        if f_state["question_status"] == "ended":
+            conn.close()
+            return True, None
+
         questions = conn.execute("SELECT * FROM questions WHERE round_type IN ('final', 'projector') ORDER BY question_number ASC;").fetchall()
 
         q_idx = f_state["question_index"]
@@ -817,6 +876,12 @@ class QuizEngine:
         """
         conn = get_db()
         comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
+        f_state = conn.execute("SELECT * FROM final_round_state WHERE id = 1;").fetchone()
+
+        if f_state["question_status"] == "ended":
+            conn.close()
+            return True, None
+
         main_duration = comp["final_main_timer_seconds"] # 60
         now_ms = int(time.time() * 1000)
 
@@ -849,6 +914,11 @@ class QuizEngine:
     def hide_final_question():
         """Hides the question & options from the Projector Screen and stops the timer."""
         conn = get_db()
+        f_state = conn.execute("SELECT * FROM final_round_state WHERE id = 1;").fetchone()
+        if f_state["question_status"] == "ended":
+            conn.close()
+            return True, None
+
         comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
         main_duration = comp["final_main_timer_seconds"]
         conn.execute("""
@@ -961,7 +1031,7 @@ class QuizEngine:
         return 0
 
     @staticmethod
-    def mark_final_correct():
+    def mark_final_correct(selected_option=None):
         """
         Adjudication: Correct Answer.
         - Main turn: 10 marks
@@ -990,8 +1060,16 @@ class QuizEngine:
         # Update team score
         conn.execute("UPDATE teams SET final_score = ? WHERE id = ?;", (new_score, team["id"]))
 
+        # Also persist into final_question_results (Locks question)
+        q_id = f_state["current_question_id"]
+        q_idx = f_state["question_index"]
+        q_row = conn.execute("SELECT * FROM questions WHERE id = ?;", (q_id,)).fetchone()
+        correct_idx = q_row["correct_index"] if q_row else 0
+        if selected_option is None:
+            selected_option = correct_idx
+
         # Record pass history
-        pass_hist.append({"slot": active_slot, "team_name": team["name"], "result": "correct", "marks": marks})
+        pass_hist.append({"slot": active_slot, "team_name": team["name"], "result": "correct", "marks": marks, "selected_option": selected_option})
 
         # End question
         conn.execute("""
@@ -1003,6 +1081,30 @@ class QuizEngine:
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1;
         """, (active_slot, json.dumps(pass_hist)))
+
+        # Also persist into final_question_results (Locks question)
+        q_id = f_state["current_question_id"]
+        q_idx = f_state["question_index"]
+        q_row = conn.execute("SELECT * FROM questions WHERE id = ?;", (q_id,)).fetchone()
+        correct_idx = q_row["correct_index"] if q_row else 0
+        attempted_desc = " ➔ ".join([f"T{h['slot']} ({h['team_name']})" for h in pass_hist])
+
+        conn.execute("""
+        INSERT INTO final_question_results (
+            question_id, question_index, status, winning_team_slot, winning_team_name,
+            awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, updated_at
+        ) VALUES (?, ?, 'ended', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(question_id) DO UPDATE SET
+            status = 'ended',
+            winning_team_slot = excluded.winning_team_slot,
+            winning_team_name = excluded.winning_team_name,
+            awarded_marks = excluded.awarded_marks,
+            selected_option = excluded.selected_option,
+            correct_index = excluded.correct_index,
+            attempted_by = excluded.attempted_by,
+            pass_history_json = excluded.pass_history_json,
+            updated_at = CURRENT_TIMESTAMP;
+        """, (q_id, q_idx, active_slot, team["name"], marks, correct_idx, correct_idx, attempted_desc, json.dumps(pass_hist)))
 
         # Score transaction
         turn_desc = "main turn" if pass_count == 0 else f"pass {pass_count}"
@@ -1095,6 +1197,30 @@ class QuizEngine:
             WHERE id = 1;
             """, (json.dumps(pass_hist),))
 
+            # Also persist into final_question_results (Locks question)
+            q_id = f_state["current_question_id"]
+            q_idx = f_state["question_index"]
+            q_row = conn.execute("SELECT * FROM questions WHERE id = ?;", (q_id,)).fetchone()
+            correct_idx = q_row["correct_index"] if q_row else 0
+            attempted_desc = " ➔ ".join([f"T{h['slot']} ({h['team_name']})" for h in pass_hist])
+
+            conn.execute("""
+            INSERT INTO final_question_results (
+                question_id, question_index, status, winning_team_slot, winning_team_name,
+                awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, updated_at
+            ) VALUES (?, ?, 'ended', NULL, NULL, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(question_id) DO UPDATE SET
+                status = 'ended',
+                winning_team_slot = NULL,
+                winning_team_name = NULL,
+                awarded_marks = 0,
+                selected_option = excluded.selected_option,
+                correct_index = excluded.correct_index,
+                attempted_by = excluded.attempted_by,
+                pass_history_json = excluded.pass_history_json,
+                updated_at = CURRENT_TIMESTAMP;
+            """, (q_id, q_idx, selected_option, correct_idx, attempted_desc, json.dumps(pass_hist)))
+
             conn.execute("""
             INSERT INTO audit_events (event_type, details)
             VALUES ('FINAL_INCORRECT', ?);
@@ -1181,6 +1307,30 @@ class QuizEngine:
             WHERE id = 1;
             """, (json.dumps(pass_hist),))
 
+            # Also persist into final_question_results (Locks question)
+            q_id = f_state["current_question_id"]
+            q_idx = f_state["question_index"]
+            q_row = conn.execute("SELECT * FROM questions WHERE id = ?;", (q_id,)).fetchone()
+            correct_idx = q_row["correct_index"] if q_row else 0
+            attempted_desc = " ➔ ".join([f"T{h['slot']} ({h['team_name']})" for h in pass_hist])
+
+            conn.execute("""
+            INSERT INTO final_question_results (
+                question_id, question_index, status, winning_team_slot, winning_team_name,
+                awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, updated_at
+            ) VALUES (?, ?, 'ended', NULL, NULL, 0, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(question_id) DO UPDATE SET
+                status = 'ended',
+                winning_team_slot = NULL,
+                winning_team_name = NULL,
+                awarded_marks = 0,
+                selected_option = NULL,
+                correct_index = excluded.correct_index,
+                attempted_by = excluded.attempted_by,
+                pass_history_json = excluded.pass_history_json,
+                updated_at = CURRENT_TIMESTAMP;
+            """, (q_id, q_idx, correct_idx, attempted_desc, json.dumps(pass_hist)))
+
             conn.execute("""
             INSERT INTO audit_events (event_type, details)
             VALUES ('FINAL_TIMEOUT_ENDED', ?);
@@ -1218,14 +1368,27 @@ class QuizEngine:
 
     @staticmethod
     def reset_final_scores():
-        """Resets all teams' Projector / Final Quiz scores to 0 without affecting teams, finalists, or questions."""
+        """Resets all teams' Projector / Final Quiz scores to 0 and clears question lock history."""
         conn = get_db()
         conn.execute("UPDATE teams SET final_score = 0;")
         conn.execute("DELETE FROM score_transactions WHERE round_type = 'final';")
+        conn.execute("DELETE FROM final_question_results;")
         conn.execute("""
         INSERT INTO audit_events (event_type, details)
-        VALUES ('FINAL_SCORES_RESET', 'Host reset all Projector Quiz (Final Round) scores to 0.');
+        VALUES ('FINAL_SCORES_RESET', 'Host reset all Projector Quiz (Final Round) scores and question locks.');
         """)
         conn.commit()
         conn.close()
-        return True, None
+        return QuizEngine.load_final_question(0)
+
+    @staticmethod
+    def unlock_final_question(question_index: int):
+        """Allows host in Admin console to reopen/unlock an answered question if needed."""
+        conn = get_db()
+        questions = conn.execute("SELECT * FROM questions WHERE round_type IN ('final', 'projector') ORDER BY question_number ASC;").fetchall()
+        if 0 <= question_index < len(questions):
+            q_id = questions[question_index]["id"]
+            conn.execute("DELETE FROM final_question_results WHERE question_id = ? OR question_index = ?;", (q_id, question_index))
+            conn.commit()
+        conn.close()
+        return QuizEngine.load_final_question(question_index)

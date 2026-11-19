@@ -146,7 +146,13 @@ async function populateConsoleQuestionJump() {
       const opt = document.createElement("option");
       opt.value = idx;
       const preview = q.text.length > 40 ? q.text.substring(0, 40) + "..." : q.text;
-      opt.textContent = `Q${idx + 1} [${q.category || 'General'}]: ${preview}`;
+      const completedInfo = (currentFinalState && currentFinalState.completed_questions) ? currentFinalState.completed_questions[idx] : null;
+      if (completedInfo) {
+        const markText = completedInfo.winning_team_slot ? `+${completedInfo.awarded_marks}pts` : `0pts`;
+        opt.textContent = `[🔒 ${markText}] Q${idx + 1} [${q.category || 'General'}]: ${preview}`;
+      } else {
+        opt.textContent = `Q${idx + 1} [${q.category || 'General'}]: ${preview}`;
+      }
       if (currentFinalState && currentFinalState.question_index === idx) {
         opt.selected = true;
       }
@@ -251,8 +257,53 @@ function renderFinalConsole(state) {
     const hideBtn = document.getElementById("btn-hide-question");
     const isMediaQ = Boolean(state.is_media_question || q.is_media_question);
     const isOptsVis = state.is_options_visible !== undefined ? Boolean(state.is_options_visible) : Boolean(state.is_question_visible);
+    const isEnded = status === "ended" || Boolean(state.is_locked);
+    const lockInfo = state.lock_info || {};
 
-    if (state.is_question_visible && !isOptsVis) {
+    // Host Console Locked Question Banner
+    const lockedBanner = document.getElementById("console-locked-status-banner");
+    const lockedDesc = document.getElementById("console-locked-desc");
+
+    if (isEnded && lockedBanner) {
+      lockedBanner.style.display = "flex";
+      const winSlot = lockInfo.winning_team_slot || state.winning_team_slot;
+      const finalistsMap = {};
+      finalists.forEach(f => { finalistsMap[f.finalist_slot] = f; });
+      const winTeam = winSlot ? finalistsMap[winSlot] : null;
+      const winName = lockInfo.winning_team_name || (winTeam ? winTeam.name : (winSlot ? `Team ${winSlot}` : null));
+      const marks = (lockInfo.awarded_marks !== undefined && lockInfo.awarded_marks !== null)
+        ? lockInfo.awarded_marks
+        : (state.current_marks || 0);
+
+      if (winSlot) {
+        lockedBanner.style.borderColor = "#10b981";
+        if (lockedDesc) {
+          lockedDesc.innerHTML = `<span style="color:#34d399; font-weight:800;">+${marks} Marks</span> awarded to <strong>[T${winSlot}] ${winName}</strong> (Projector Screen Locked)`;
+        }
+      } else {
+        lockedBanner.style.borderColor = "#ef4444";
+        if (lockedDesc) {
+          lockedDesc.innerHTML = `<span style="color:#f87171; font-weight:800;">Question Ended (0 Marks)</span> &bull; 2 Passes exhausted (Projector Screen Locked)`;
+        }
+      }
+    } else if (lockedBanner) {
+      lockedBanner.style.display = "none";
+    }
+
+    if (isEnded) {
+      if (visStatusEl) {
+        visStatusEl.innerHTML = `<span style="color:#10b981;">🔒 QUESTION COMPLETED &amp; LOCKED</span> <span style="font-size:0.8rem; color:#94a3b8; font-weight:500;">(Outcome recorded &bull; Answering disabled on stage)</span>`;
+      }
+      if (showBtn) {
+        showBtn.style.display = "inline-block";
+        showBtn.textContent = "🔒 Question Locked";
+        showBtn.className = "btn btn-secondary";
+        showBtn.style.boxShadow = "none";
+        showBtn.disabled = true;
+      }
+      if (showOptsBtn) showOptsBtn.style.display = "none";
+      if (hideBtn) hideBtn.style.display = "none";
+    } else if (state.is_question_visible && !isOptsVis) {
       if (visStatusEl) {
         visStatusEl.innerHTML = `<span style="color:#f59e0b;">🎬 MEDIA &amp; QUESTION SHOWN</span> <span style="font-size:0.8rem; color:#94a3b8; font-weight:500;">(Options hidden • Timer paused until options are revealed)</span>`;
       }
@@ -396,13 +447,27 @@ function renderFinalConsole(state) {
     }
   }
 
+  // Buttons
+  const btnAdjCorrectEl = document.querySelector(".btn-adj-correct");
+  const btnAdjWrongEl = document.querySelector(".btn-adj-wrong");
+  const btnAdjPassEl = document.querySelector(".btn-adj-pass");
+  if (btnAdjCorrectEl) btnAdjCorrectEl.disabled = isEnded;
+  if (btnAdjWrongEl) btnAdjWrongEl.disabled = isEnded;
+  if (btnAdjPassEl) btnAdjPassEl.disabled = isEnded;
+
   // Timer & Buttons
   updateAdminTimer(state.time_remaining_seconds);
   const timerBtn = document.getElementById("btn-toggle-timer");
-  if (state.timer_is_running) {
+  if (isEnded) {
+    timerBtn.disabled = true;
+    timerBtn.textContent = "Stopped (Locked)";
+    timerBtn.className = "action-card-btn btn-secondary";
+  } else if (state.timer_is_running) {
+    timerBtn.disabled = false;
     timerBtn.textContent = "Pause Timer";
     timerBtn.className = "action-card-btn btn-warning";
   } else {
+    timerBtn.disabled = false;
     timerBtn.textContent = "Start Timer";
     timerBtn.className = "action-card-btn btn-adj-timer";
   }
@@ -455,6 +520,9 @@ function renderAdminFinalScoreboard(finalists) {
 
 // Host Adjudication Actions
 async function adjudicate(decision) {
+  if (currentFinalState && (currentFinalState.question_status === "ended" || currentFinalState.is_locked)) {
+    return;
+  }
   if (decision === "incorrect" && currentFinalState && currentFinalState.question_status !== "ended") {
     const passHist = currentFinalState.pass_history || [];
     const maxPasses = currentFinalState.max_passes || 2;
@@ -509,6 +577,7 @@ async function adjudicate(decision) {
 
 async function toggleTimer() {
   if (!currentFinalState) return;
+  if (currentFinalState.question_status === "ended" || currentFinalState.is_locked) return;
   const action = currentFinalState.timer_is_running ? "pause" : "start";
   try {
     const res = await fetch("/api/admin/final/timer", {
@@ -527,6 +596,7 @@ async function toggleTimer() {
 }
 
 async function resetTimer() {
+  if (currentFinalState && (currentFinalState.question_status === "ended" || currentFinalState.is_locked)) return;
   try {
     const res = await fetch("/api/admin/final/timer", {
       method: "POST",
@@ -540,6 +610,32 @@ async function resetTimer() {
     }
   } catch (e) {
     console.error("Reset error", e);
+  }
+}
+
+async function unlockFinalQuestion() {
+  if (!currentFinalState) return;
+  const qNum = currentFinalState.question_index + 1;
+  const ok = confirm(`Are you sure you want to unlock Question ${qNum}?\n\nThis will re-open the question for answering on the Projector Screen.`);
+  if (!ok) return;
+
+  try {
+    const res = await fetch("/api/admin/final/unlock_question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question_index: currentFinalState.question_index })
+    });
+    const data = await res.json();
+    if (data.success && data.state) {
+      currentFinalState = data.state;
+      renderFinalConsole(currentFinalState);
+      populateConsoleQuestionJump();
+    } else {
+      alert("Error: " + (data.error || "Failed to unlock question."));
+    }
+  } catch (e) {
+    console.error("Unlock question error:", e);
+    alert("Failed to unlock question.");
   }
 }
 

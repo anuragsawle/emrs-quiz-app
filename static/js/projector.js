@@ -134,7 +134,13 @@ function renderProjectorState(state) {
     rounds.forEach(r => {
       const pill = document.getElementById(`stage-round-${r.round_number}`);
       const countEl = document.getElementById(`round-count-${r.round_number}`);
-      if (countEl) countEl.textContent = `${r.total_questions} Questions`;
+      if (countEl) {
+        if (r.completed_count !== undefined && r.completed_count > 0) {
+          countEl.textContent = `${r.completed_count}/${r.total_questions} Done`;
+        } else {
+          countEl.textContent = `${r.total_questions} Questions`;
+        }
+      }
 
       if (pill) {
         if (r.is_active) {
@@ -187,18 +193,21 @@ function renderProjectorState(state) {
       catBadge.textContent = q.category || "General";
     }
 
-    const isOptionsVisible = state.is_options_visible !== undefined ? Boolean(state.is_options_visible) : isVisible;
+    const isEnded = status === "ended" || Boolean(state.is_locked);
+    const isOptionsVisible = (isEnded || state.is_options_visible !== undefined) ? Boolean(state.is_options_visible || isEnded) : (isVisible || isEnded);
     const isMediaQuestion = Boolean(state.is_media_question || q.is_media_question);
     const showOptionsPrompt = document.getElementById("projector-show-options-prompt");
     const hiddenIcon = document.getElementById("projector-hidden-icon");
     const hiddenDesc = document.getElementById("projector-hidden-desc");
     const mainShowBtn = document.getElementById("projector-main-show-btn");
     const answerHint = document.getElementById("projector-answer-hint");
+    const lockedCard = document.getElementById("projector-locked-card");
 
-    if (!isVisible) {
+    if (!isVisible && !isEnded) {
       if (hiddenPrompt) hiddenPrompt.style.display = "block";
       if (showOptionsPrompt) showOptionsPrompt.style.display = "none";
       if (answerHint) answerHint.style.display = "none";
+      if (lockedCard) lockedCard.style.display = "none";
 
       if (isMediaQuestion) {
         if (hiddenIcon) hiddenIcon.innerHTML = q.media_type === "audio" ? "&#127925;" : "&#128444;&#65039;";
@@ -268,7 +277,7 @@ function renderProjectorState(state) {
         }
       }
 
-      if (!isOptionsVisible) {
+      if (!isOptionsVisible && !isEnded) {
         // Audio / Visual Step 1: Show Media & Question first; show "Show Options" button; timer paused!
         if (showOptionsPrompt) showOptionsPrompt.style.display = "block";
         if (optContainer) {
@@ -277,8 +286,9 @@ function renderProjectorState(state) {
         }
         if (answerHint) answerHint.style.display = "none";
         if (explBox) explBox.style.display = "none";
+        if (lockedCard) lockedCard.style.display = "none";
       } else {
-        // Step 2 (or Text question): Show Options & Interactive Answer Cards!
+        // Step 2 (or Text question or Ended/Locked): Show Options & Interactive Answer Cards!
         if (showOptionsPrompt) showOptionsPrompt.style.display = "none";
         if (optContainer) {
           optContainer.style.display = "grid";
@@ -286,7 +296,7 @@ function renderProjectorState(state) {
         }
 
         const letters = ["A", "B", "C", "D"];
-        const isEnded = status === "ended";
+        const lockInfo = state.lock_info || {};
 
         // Collect options already chosen incorrectly on earlier turns of this question
         const wrongSelectedOptions = new Set();
@@ -295,9 +305,12 @@ function renderProjectorState(state) {
             wrongSelectedOptions.add(Number(h.selected_option));
           }
         });
+        if (lockInfo && lockInfo.selected_option !== undefined && lockInfo.status !== "correct") {
+          wrongSelectedOptions.add(Number(lockInfo.selected_option));
+        }
 
         if (answerHint) {
-          answerHint.style.display = (isVisible && isOptionsVisible && !isEnded) ? "block" : "none";
+          answerHint.style.display = (!isEnded && isOptionsVisible) ? "block" : "none";
         }
 
         q.options.forEach((optText, idx) => {
@@ -305,25 +318,39 @@ function renderProjectorState(state) {
           card.className = "projector-opt-card";
           card.setAttribute("role", "button");
           const isAlreadyWrong = wrongSelectedOptions.has(idx);
-          card.setAttribute("tabindex", (isEnded || isAlreadyWrong) ? "-1" : "0");
           card.setAttribute("data-opt-index", idx);
 
           let tagHtml = "";
           if (isEnded) {
             card.classList.add("disabled");
+            card.style.pointerEvents = "none";
+            card.style.cursor = "not-allowed";
+            card.setAttribute("tabindex", "-1");
             if (idx === q.correct_index) {
               card.classList.add("correct-revealed");
-              tagHtml = `<span class="projector-opt-tag tag-correct">&#10004; CORRECT ANSWER</span>`;
-            } else if (isAlreadyWrong || idx === localSelectedOption) {
+              const isWinnerSelected = Boolean(state.winning_team_slot && (
+                (lockInfo && Number(lockInfo.selected_option) === idx) ||
+                (state.pass_history || []).some(h => h.result === "correct" && Number(h.selected_option) === idx) ||
+                idx === localSelectedOption
+              ));
+              const awardedMarks = (lockInfo && lockInfo.awarded_marks !== undefined && lockInfo.awarded_marks !== null)
+                ? lockInfo.awarded_marks
+                : (state.current_marks || 10);
+              tagHtml = isWinnerSelected
+                ? `<span class="projector-opt-tag tag-correct">&#10004; WINNING ANSWER (+${awardedMarks})</span>`
+                : `<span class="projector-opt-tag tag-correct">&#10004; CORRECT ANSWER</span>`;
+            } else if (isAlreadyWrong || (lockInfo && Number(lockInfo.selected_option) === idx) || idx === localSelectedOption) {
               card.classList.add("incorrect-revealed");
-              tagHtml = `<span class="projector-opt-tag tag-incorrect">&#10006; SELECTED (WRONG)</span>`;
+              tagHtml = `<span class="projector-opt-tag tag-incorrect">&#10006; WRONG ATTEMPT</span>`;
             }
           } else if (isAlreadyWrong) {
             card.classList.add("disabled");
             card.classList.add("incorrect-revealed");
+            card.setAttribute("tabindex", "-1");
             tagHtml = `<span class="projector-opt-tag tag-incorrect">&#10006; WRONG (PASSED)</span>`;
           } else {
             // Live interactive option!
+            card.setAttribute("tabindex", "0");
             card.onclick = () => projectorSelectOption(idx);
           }
 
@@ -334,6 +361,92 @@ function renderProjectorState(state) {
           `;
           optContainer.appendChild(card);
         });
+
+        // Prominent Locked Question Card display
+        if (isEnded && lockedCard) {
+          lockedCard.style.display = "block";
+          const lockedHeadline = document.getElementById("locked-headline");
+          const lockedMarksBadge = document.getElementById("locked-marks-badge");
+          const lockedTeamsTrail = document.getElementById("locked-teams-trail");
+          const lockedCorrectAnswer = document.getElementById("locked-correct-answer");
+          const lockedFinalStatus = document.getElementById("locked-final-status");
+
+          const winSlot = lockInfo.winning_team_slot || state.winning_team_slot;
+          const finalistsMap = {};
+          finalists.forEach(f => { finalistsMap[f.finalist_slot] = f; });
+          const winTeam = winSlot ? finalistsMap[winSlot] : null;
+          const winName = lockInfo.winning_team_name || (winTeam ? winTeam.name : (winSlot ? `Team ${winSlot}` : null));
+          const awardedMarks = (lockInfo.awarded_marks !== undefined && lockInfo.awarded_marks !== null)
+            ? lockInfo.awarded_marks
+            : (state.current_marks || 0);
+
+          if (winSlot) {
+            lockedCard.style.borderColor = "#10b981";
+            lockedCard.style.boxShadow = "0 0 35px rgba(16, 185, 129, 0.35)";
+            if (lockedHeadline) {
+              lockedHeadline.innerHTML = `🏆 Correct Answer by <strong>[T${winSlot}] ${winName}</strong>`;
+              lockedHeadline.style.color = "#34d399";
+            }
+            if (lockedMarksBadge) {
+              lockedMarksBadge.textContent = `+${awardedMarks} MARKS AWARDED`;
+              lockedMarksBadge.className = "badge badge-green";
+              lockedMarksBadge.style.background = "#059669";
+            }
+            if (lockedFinalStatus) {
+              lockedFinalStatus.innerHTML = `<span style="color:#10b981; font-weight:800;">✔ COMPLETED &amp; LOCKED (+${awardedMarks} pts)</span>`;
+            }
+          } else {
+            lockedCard.style.borderColor = "#ef4444";
+            lockedCard.style.boxShadow = "0 0 35px rgba(239, 68, 68, 0.35)";
+            if (lockedHeadline) {
+              lockedHeadline.innerHTML = `❌ Question Exhausted (No Marks Awarded)`;
+              lockedHeadline.style.color = "#f87171";
+            }
+            if (lockedMarksBadge) {
+              lockedMarksBadge.textContent = "0 MARKS";
+              lockedMarksBadge.className = "badge badge-red";
+              lockedMarksBadge.style.background = "#dc2626";
+            }
+            if (lockedFinalStatus) {
+              lockedFinalStatus.innerHTML = `<span style="color:#ef4444; font-weight:800;">✖ EXHAUSTED &amp; LOCKED (0 pts)</span>`;
+            }
+          }
+
+          // Format attempted by / passing trail
+          if (lockedTeamsTrail) {
+            const hist = (lockInfo.pass_history && lockInfo.pass_history.length > 0)
+              ? lockInfo.pass_history
+              : (state.pass_history || []);
+            if (hist.length > 0) {
+              lockedTeamsTrail.innerHTML = hist.map(h => {
+                const team = finalistsMap[h.slot];
+                const tName = team ? team.name : `Team ${h.slot}`;
+                if (h.result === "correct") {
+                  return `<span style="color:#34d399; font-weight:800;">[T${h.slot}] ${tName} (✔ +${h.marks || 10})</span>`;
+                } else if (h.result === "incorrect") {
+                  return `<span style="color:#f87171; font-weight:700;">[T${h.slot}] ${tName} (✖ Wrong)</span>`;
+                } else {
+                  return `<span style="color:#fde68a; font-weight:700;">[T${h.slot}] ${tName} (Passed)</span>`;
+                }
+              }).join(" &rarr; ");
+            } else if (lockInfo.attempted_by) {
+              lockedTeamsTrail.textContent = lockInfo.attempted_by;
+            } else {
+              const fSlot = state.first_team_slot;
+              const fTeam = finalistsMap[fSlot];
+              lockedTeamsTrail.textContent = fSlot ? `[T${fSlot}] ${fTeam ? fTeam.name : 'Team ' + fSlot}` : "None";
+            }
+          }
+
+          // Format correct answer
+          if (lockedCorrectAnswer) {
+            const corrLetter = letters[q.correct_index] || "A";
+            const corrText = q.options[q.correct_index] || "";
+            lockedCorrectAnswer.innerHTML = `<span style="color:#34d399; font-weight:800;">Option ${corrLetter}:</span> ${corrText}`;
+          }
+        } else if (lockedCard) {
+          lockedCard.style.display = "none";
+        }
 
         // Explanation if ended
         if (isEnded && q.explanation) {
@@ -356,6 +469,8 @@ function renderProjectorState(state) {
     if (answerHint) answerHint.style.display = "none";
     if (optContainer) optContainer.innerHTML = "";
     if (explBox) explBox.style.display = "none";
+    const lockedCard = document.getElementById("projector-locked-card");
+    if (lockedCard) lockedCard.style.display = "none";
   }
 
   // 2. Active Team Spotlight Banner
@@ -365,42 +480,52 @@ function renderProjectorState(state) {
 
   const teamTitleEl = document.getElementById("spotlight-team-title");
   const turnBadgeEl = document.getElementById("spotlight-turn-type");
+  const isEnded = status === "ended" || Boolean(state.is_locked);
+  const lockInfo = state.lock_info || {};
 
-  if (activeTeam) {
-    teamTitleEl.textContent = `TURN: [T${activeSlot}] ${activeTeam.name}`;
-  } else {
-    teamTitleEl.textContent = `TURN: TEAM ${activeSlot}`;
-  }
+  if (isEnded) {
+    const winSlot = lockInfo.winning_team_slot || state.winning_team_slot;
+    const winner = winSlot ? finalistsMap[winSlot] : null;
+    const winName = lockInfo.winning_team_name || (winner ? winner.name : (winSlot ? `Team ${winSlot}` : null));
+    const winMarks = (lockInfo.awarded_marks !== undefined && lockInfo.awarded_marks !== null)
+      ? lockInfo.awarded_marks
+      : (state.current_marks || 0);
 
-  const passCount = (state.pass_history || []).length;
-  const currentMarks = state.current_marks || (passCount === 0 ? 10 : (passCount === 1 ? 5 : 2));
-
-  if (turnType === "main") {
-    turnBadgeEl.className = "spotlight-turn-type turn-main";
-    turnBadgeEl.textContent = "MAIN TURN • 10 MARKS (60s)";
-  } else if (passCount === 1) {
-    turnBadgeEl.className = "spotlight-turn-type turn-pass";
-    turnBadgeEl.textContent = "1ST PASS • 5 MARKS (5s)";
-  } else {
-    turnBadgeEl.className = "spotlight-turn-type turn-pass";
-    turnBadgeEl.textContent = "2ND PASS (FINAL) • 2 MARKS (5s)";
-  }
-
-  // Question outcome status banner
-  const statusBanner = document.getElementById("question-status-banner");
-  if (status === "ended") {
-    if (state.winning_team_slot) {
-      const winner = finalistsMap[state.winning_team_slot];
-      const winningEntry = (state.pass_history || []).find(h => h.result === "correct");
-      const awardedMarks = winningEntry ? winningEntry.marks : currentMarks;
-      statusBanner.innerHTML = `<span style="color:#10b981; font-weight:800;">&#10004; CORRECT ANSWER! +${awardedMarks} Marks awarded to ${winner ? winner.name : 'Team '+state.winning_team_slot}</span>`;
+    if (winSlot) {
+      teamTitleEl.textContent = `🏆 WINNER: [T${winSlot}] ${winName}`;
+      turnBadgeEl.className = "spotlight-turn-type turn-main";
+      turnBadgeEl.style.background = "#059669";
+      turnBadgeEl.textContent = `🔒 LOCKED • +${winMarks} MARKS AWARDED`;
     } else {
-      statusBanner.innerHTML = `<span style="color:#ef4444; font-weight:800;">&#10006; QUESTION ENDED (No marks awarded)</span>`;
+      teamTitleEl.textContent = `❌ QUESTION ENDED (0 MARKS)`;
+      turnBadgeEl.className = "spotlight-turn-type turn-pass";
+      turnBadgeEl.style.background = "#dc2626";
+      turnBadgeEl.textContent = `🔒 LOCKED • 0 MARKS`;
     }
-    statusBanner.style.display = "block";
   } else {
-    statusBanner.style.display = "none";
+    turnBadgeEl.style.background = "";
+    if (activeTeam) {
+      teamTitleEl.textContent = `TURN: [T${activeSlot}] ${activeTeam.name}`;
+    } else {
+      teamTitleEl.textContent = `TURN: TEAM ${activeSlot}`;
+    }
+
+    const passCount = (state.pass_history || []).length;
+    if (turnType === "main") {
+      turnBadgeEl.className = "spotlight-turn-type turn-main";
+      turnBadgeEl.textContent = "MAIN TURN • 10 MARKS (60s)";
+    } else if (passCount === 1) {
+      turnBadgeEl.className = "spotlight-turn-type turn-pass";
+      turnBadgeEl.textContent = "1ST PASS • 5 MARKS (5s)";
+    } else {
+      turnBadgeEl.className = "spotlight-turn-type turn-pass";
+      turnBadgeEl.textContent = "2ND PASS (FINAL) • 2 MARKS (5s)";
+    }
   }
+
+  // Question outcome status banner (hidden since lockedCard provides rich summary)
+  const statusBanner = document.getElementById("question-status-banner");
+  if (statusBanner) statusBanner.style.display = "none";
 
   // Update Autonomous Stage Toolbar Buttons on Projector Screen
   const btnPrev = document.getElementById("proj-btn-prev");
@@ -415,37 +540,54 @@ function renderProjectorState(state) {
   const isOptionsVisibleStage = state.is_options_visible !== undefined ? Boolean(state.is_options_visible) : isVisible;
   const isMediaQStage = Boolean(state.is_media_question || (q && q.is_media_question));
   const isReadyToJudge = isVisible && isOptionsVisibleStage && !isEnded;
+  const passCount = (state.pass_history || []).length;
+  const currentMarks = state.current_marks || (passCount === 0 ? 10 : (passCount === 1 ? 5 : 2));
 
   if (btnPrev) btnPrev.disabled = state.question_index <= 0;
   if (btnNext) btnNext.disabled = state.question_index >= state.total_questions - 1;
 
   if (btnShowToggle) {
-    if (!isVisible) {
+    if (isEnded) {
+      btnShowToggle.disabled = true;
+      btnShowToggle.textContent = "🔒 Question Locked";
+      btnShowToggle.className = "btn btn-secondary";
+      btnShowToggle.onclick = null;
+    } else if (!isVisible) {
+      btnShowToggle.disabled = false;
       btnShowToggle.textContent = isMediaQStage ? "👁️ Show Media & Q [Space]" : "👁️ Show Question [Space]";
       btnShowToggle.className = "btn btn-success";
       btnShowToggle.onclick = projectorShowQuestion;
     } else if (!isOptionsVisibleStage) {
+      btnShowToggle.disabled = false;
       btnShowToggle.textContent = "📋 Show Options & Timer [Space]";
       btnShowToggle.className = "btn btn-success";
       btnShowToggle.onclick = projectorShowOptions;
     } else {
+      btnShowToggle.disabled = false;
       btnShowToggle.textContent = "🔒 Hide Question";
       btnShowToggle.className = "btn btn-secondary";
       btnShowToggle.onclick = projectorHideQuestion;
     }
   }
 
+  if (btnResetQ) {
+    btnResetQ.disabled = isEnded;
+    btnResetQ.title = isEnded ? "Question is locked and completed" : "Restart / Reopen Question";
+    btnResetQ.style.opacity = isEnded ? "0.45" : "1";
+    btnResetQ.style.cursor = isEnded ? "not-allowed" : "pointer";
+  }
+
   if (btnTimerToggle) {
-    btnTimerToggle.disabled = !isReadyToJudge;
-    btnTimerToggle.textContent = state.timer_is_running ? "⏸️ Pause [P]" : "▶️ Resume [P]";
+    btnTimerToggle.disabled = !isReadyToJudge || isEnded;
+    btnTimerToggle.textContent = isEnded ? "⏹️ Stopped" : (state.timer_is_running ? "⏸️ Pause [P]" : "▶️ Resume [P]");
   }
 
   if (btnAdjCorrect) {
-    btnAdjCorrect.disabled = !isReadyToJudge;
+    btnAdjCorrect.disabled = !isReadyToJudge || isEnded;
     btnAdjCorrect.innerHTML = `&#10004; Correct (+${currentMarks})`;
   }
   if (btnAdjWrong) {
-    btnAdjWrong.disabled = !isReadyToJudge;
+    btnAdjWrong.disabled = !isReadyToJudge || isEnded;
     if (passCount === 0) {
       btnAdjWrong.innerHTML = `&#10006; Wrong &rarr; Pass 1 (5pts)`;
     } else if (passCount === 1) {
@@ -455,7 +597,7 @@ function renderProjectorState(state) {
     }
   }
   if (btnAdjPass) {
-    btnAdjPass.disabled = !isReadyToJudge;
+    btnAdjPass.disabled = !isReadyToJudge || isEnded;
     if (passCount === 0) {
       btnAdjPass.innerHTML = `&#9201; Pass to 1st (5s &bull; 5pts) [T]`;
     } else if (passCount === 1) {
@@ -686,6 +828,10 @@ async function projectorNavigate(delta) {
 
 async function projectorResetQuestion() {
   if (!currentState) return;
+  if (currentState.question_status === "ended" || currentState.is_locked) {
+    showProjectorPassToast("🔒 This question is locked and completed.");
+    return;
+  }
   closeWrongPassOverlay();
   localSelectedOption = null;
   isAnswerRevealed = false;
@@ -825,6 +971,7 @@ async function confirmPendingWrongPass() {
 async function projectorSelectOption(idx) {
   if (isOptionSubmitting || pendingWrongPass) return;
   if (!currentState || !currentState.question) return;
+  if (currentState.question_status === "ended" || currentState.is_locked) return;
   if (!currentState.is_question_visible) {
     projectorShowQuestion();
     return;
@@ -933,7 +1080,7 @@ async function projectorSelectOption(idx) {
 async function projectorAdjudicate(decision) {
   if (pendingWrongPass || isOptionSubmitting) return;
   if (!currentState || !currentState.question) return;
-  if (currentState.question_status === "ended") return;
+  if (currentState.question_status === "ended" || currentState.is_locked) return;
 
   if (decision === "correct") {
     if (window.quizAudio) window.quizAudio.playCorrect();
@@ -976,6 +1123,7 @@ async function projectorAdjudicate(decision) {
 
 async function projectorToggleTimer() {
   if (!currentState) return;
+  if (currentState.question_status === "ended" || currentState.is_locked) return;
   const action = currentState.timer_is_running ? "pause" : "start";
   try {
     const res = await fetch("/api/admin/final/timer", {
@@ -1056,10 +1204,12 @@ function setupKeyboardShortcuts() {
 
     const key = e.key.toUpperCase();
     const isOptionsVis = currentState && (currentState.is_options_visible !== undefined ? currentState.is_options_visible : currentState.is_question_visible);
-    const isQuestionActive = currentState && currentState.is_question_visible && isOptionsVis && currentState.question_status !== "ended";
+    const isQuestionEnded = currentState && (currentState.question_status === "ended" || Boolean(currentState.is_locked));
+    const isQuestionActive = currentState && currentState.is_question_visible && isOptionsVis && !isQuestionEnded;
 
     if (key === " " || e.code === "Space" || key === "ENTER") {
       e.preventDefault();
+      if (isQuestionEnded) return;
       if (!currentState || !currentState.is_question_visible) {
         projectorShowQuestion();
       } else if (!isOptionsVis) {
@@ -1068,15 +1218,19 @@ function setupKeyboardShortcuts() {
         projectorToggleTimer();
       }
     } else if (key === "1" || (key === "A" && isQuestionActive)) {
+      if (isQuestionEnded) return;
       e.preventDefault();
       projectorSelectOption(0);
     } else if (key === "2" || (key === "B" && isQuestionActive)) {
+      if (isQuestionEnded) return;
       e.preventDefault();
       projectorSelectOption(1);
     } else if (key === "3" || (key === "C" && isQuestionActive)) {
+      if (isQuestionEnded) return;
       e.preventDefault();
       projectorSelectOption(2);
     } else if (key === "4" || (key === "D" && isQuestionActive)) {
+      if (isQuestionEnded) return;
       e.preventDefault();
       projectorSelectOption(3);
     } else if (e.key === "ArrowRight" || (key === "N" && !isQuestionActive)) {
@@ -1087,13 +1241,13 @@ function setupKeyboardShortcuts() {
       projectorNavigate(-1);
     } else if (key === "P") {
       e.preventDefault();
-      projectorToggleTimer();
+      if (!isQuestionEnded) projectorToggleTimer();
     } else if (key === "R") {
       e.preventDefault();
-      projectorResetQuestion();
+      if (!isQuestionEnded) projectorResetQuestion();
     } else if (key === "T") {
       e.preventDefault();
-      projectorAdjudicate("timeout_or_pass");
+      if (!isQuestionEnded) projectorAdjudicate("timeout_or_pass");
     } else if (key === "K") {
       e.preventDefault();
       projectorToggleAnswer();

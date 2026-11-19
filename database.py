@@ -204,6 +204,24 @@ def init_db():
     );
     """)
 
+    # 9. Persistent Question Results for Final Round (locks answered questions)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS final_question_results (
+        question_id INTEGER PRIMARY KEY,
+        question_index INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ended',
+        winning_team_slot INTEGER NULL,
+        winning_team_name TEXT NULL,
+        awarded_marks INTEGER NOT NULL DEFAULT 0,
+        selected_option INTEGER NULL,
+        correct_index INTEGER NOT NULL DEFAULT 0,
+        attempted_by TEXT DEFAULT '',
+        pass_history_json TEXT NOT NULL DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # Ensure competition row 1 exists
     cursor.execute("SELECT COUNT(*) FROM competition WHERE id = 1;")
     if cursor.fetchone()[0] == 0:

@@ -432,7 +432,7 @@ class AdminFinalAdjudicateHandler(BaseHandler):
 
         sound = None
         if decision == "correct":
-            ok, err = QuizEngine.mark_final_correct()
+            ok, err = QuizEngine.mark_final_correct(selected_option=selected_option)
             sound = "CORRECT"
         elif decision == "incorrect":
             ok, err = QuizEngine.mark_final_incorrect(selected_option=selected_option)
@@ -487,6 +487,23 @@ class AdminFinalResetScoresHandler(BaseHandler):
         await broadcast_ws({
             "type": "FINAL_STATE_UPDATE",
             "event": "SCORES_RESET",
+            "data": state
+        })
+        self.write({"success": True, "state": state})
+
+class AdminFinalUnlockQuestionHandler(BaseHandler):
+    async def post(self):
+        data = tornado.escape.json_decode(self.request.body)
+        q_idx = int(data.get("question_index", 0))
+        ok, err = QuizEngine.unlock_final_question(q_idx)
+        if not ok:
+            self.set_status(400)
+            self.write({"error": err})
+            return
+        state = QuizEngine.get_final_round_state()
+        await broadcast_ws({
+            "type": "FINAL_STATE_UPDATE",
+            "event": "QUESTION_UNLOCKED",
             "data": state
         })
         self.write({"success": True, "state": state})
@@ -1090,6 +1107,7 @@ def make_app():
         (r"/api/admin/final/adjudicate", AdminFinalAdjudicateHandler),
         (r"/api/admin/final/score/adjust", AdminScoreAdjustHandler),
         (r"/api/admin/final/reset_scores", AdminFinalResetScoresHandler),
+        (r"/api/admin/final/unlock_question", AdminFinalUnlockQuestionHandler),
 
         # Questions & Teams Management
         (r"/api/admin/questions", AdminQuestionsHandler),
