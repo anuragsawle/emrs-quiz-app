@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EMRS Quiz Competition - Big Screen Projector View</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20261118_scroll">
+  <link rel="stylesheet" href="/static/css/style.css?v=20261119_leaderboard_v4">
 </head>
 <body class="projector-body">
 
@@ -141,7 +141,7 @@
             </div>
             <span id="locked-marks-badge" class="badge badge-green" style="font-size:1.1rem; font-weight:800; padding:0.45rem 1.1rem;">+10 MARKS</span>
           </div>
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem;">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:0.85rem;">
             <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.75rem 1rem;">
               <div style="font-size:0.75rem; text-transform:uppercase; color:#94a3b8; font-weight:700;">Attempted By / Passing Trail:</div>
               <div id="locked-teams-trail" style="font-size:1.05rem; font-weight:800; color:#f8fafc; margin-top:0.25rem;">Team 1</div>
@@ -149,6 +149,10 @@
             <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.75rem 1rem;">
               <div style="font-size:0.75rem; text-transform:uppercase; color:#94a3b8; font-weight:700;">Correct Answer:</div>
               <div id="locked-correct-answer" style="font-size:1.05rem; font-weight:800; color:#34d399; margin-top:0.25rem;">Option A</div>
+            </div>
+            <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.75rem 1rem;">
+              <div style="font-size:0.75rem; text-transform:uppercase; color:#94a3b8; font-weight:700;">Time Taken to Answer:</div>
+              <div id="locked-time-taken" style="font-size:1.05rem; font-weight:800; color:#38bdf8; margin-top:0.25rem;">--</div>
             </div>
             <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:0.75rem 1rem;">
               <div style="font-size:0.75rem; text-transform:uppercase; color:#94a3b8; font-weight:700;">Final Status:</div>
@@ -230,14 +234,16 @@
 
       <!-- Live Scoreboard -->
       <div class="projector-scoreboard-card">
-        <div style="font-size:0.85rem; font-weight:700; text-transform:uppercase; color:#94a3b8; margin-bottom:0.75rem;">LIVE FINAL SCOREBOARD</div>
+        <div style="font-size:0.85rem; font-weight:800; text-transform:uppercase; color:#94a3b8; margin-bottom:0.75rem; letter-spacing:0.06em;">
+          &#127942; LIVE FINAL LEADERBOARD
+        </div>
         <table class="projector-score-table">
           <thead>
             <tr>
-              <th>Rank</th>
-              <th>Finalist Team</th>
-              <th style="text-align:center;">Time</th>
-              <th style="text-align:right;">Score</th>
+              <th style="width:14%;">Rank</th>
+              <th style="width:44%;">Finalist Team</th>
+              <th style="width:20%; text-align:center;">Score</th>
+              <th style="width:22%; text-align:right;">Time Taken</th>
             </tr>
           </thead>
           <tbody id="projector-scoreboard-rows"></tbody>
@@ -272,7 +278,7 @@
   <!-- BRIEF STAGE ALERT TOAST (when passed from Admin console) -->
   <div id="projector-pass-toast" style="display:none; position:fixed; top:1.5rem; left:50%; transform:translateX(-50%); z-index:9998; background:linear-gradient(90deg, #991b1b 0%, #b45309 100%); border:2px solid #fbbf24; color:#ffffff; padding:1rem 2rem; border-radius:14px; font-size:1.25rem; font-weight:900; box-shadow:0 12px 35px rgba(0,0,0,0.6); text-align:center; letter-spacing:0.02em;"></div>
 
-  <script src="/static/js/audio.js"></script>
-  <script src="/static/js/projector.js?v=20261119_timeovermodal"></script>
+  <script src="/static/js/audio.js?v=20261119_leaderboard_v4"></script>
+  <script src="/static/js/projector.js?v=20261119_leaderboard_v4"></script>
 </body>
 </html>

@@ -453,6 +453,17 @@ function renderProjectorState(state) {
             const corrText = q.options[q.correct_index] || "";
             lockedCorrectAnswer.innerHTML = `<span style="color:#34d399; font-weight:800;">Option ${corrLetter}:</span> ${corrText}`;
           }
+
+          // Format time taken to answer
+          const lockedTimeTaken = document.getElementById("locked-time-taken");
+          if (lockedTimeTaken) {
+            let tSec = lockInfo.time_taken_seconds;
+            if (tSec === undefined || tSec === null) {
+              const correctEntry = (lockInfo.pass_history || []).find(h => h.result === "correct");
+              tSec = correctEntry ? correctEntry.time_taken_seconds : 0.0;
+            }
+            lockedTimeTaken.innerHTML = `<span style="color:#38bdf8; font-weight:800;">${Number(tSec || 0).toFixed(1)}s</span>`;
+          }
         } else if (lockedCard) {
           lockedCard.style.display = "none";
         }
@@ -735,8 +746,8 @@ function renderScoreboard(finalists, winningSlot) {
     tr.innerHTML = `
       <td style="color:#94a3b8; font-weight:700;">#${rank + 1}</td>
       <td><strong>[T${team.finalist_slot}]</strong> ${team.name}</td>
-      <td class="score-time" style="text-align:center; color:#38bdf8; font-weight:700; font-size:1.02rem;">${timeFormatted}</td>
-      <td class="score-pts">${team.final_score}</td>
+      <td class="score-pts" style="text-align:center;">${team.final_score} <span style="font-size:0.8rem; font-weight:700; color:#cbd5e1;">pts</span></td>
+      <td class="score-time" style="text-align:right; font-weight:800; font-size:1.1rem; color:#38bdf8;">${timeFormatted}</td>
     `;
     tbody.appendChild(tr);
   });

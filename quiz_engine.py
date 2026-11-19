@@ -528,7 +528,7 @@ class QuizEngine:
                 conn.execute("UPDATE teams SET is_finalist = 1, finalist_slot = ? WHERE id = ?;", (slot, t["id"]))
             conn.commit()
             finalists = conn.execute("""
-                SELECT id, code, name, finalist_slot, final_score, assigned_station
+                SELECT id, code, name, finalist_slot, final_score, final_time_ms, assigned_station
                 FROM teams
                 WHERE is_finalist = 1
                 ORDER BY finalist_slot ASC;

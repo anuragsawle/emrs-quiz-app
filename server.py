@@ -965,18 +965,19 @@ class AdminReportFinalCsvHandler(BaseHandler):
     def get(self):
         conn = get_db()
         finalists = conn.execute("""
-            SELECT finalist_slot, code, name, assigned_station, final_score
+            SELECT finalist_slot, code, name, assigned_station, final_score, final_time_ms
             FROM teams
             WHERE is_finalist = 1
-            ORDER BY final_score DESC;
+            ORDER BY final_score DESC, final_time_ms ASC, finalist_slot ASC;
         """).fetchall()
         conn.close()
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Final Rank", "Finalist Slot", "Team Code", "Team Name", "Lab PC", "Final Score"])
+        writer.writerow(["Final Rank", "Finalist Slot", "Team Code", "Team Name", "Lab PC", "Final Score", "Time Taken (s)"])
         for rank, f in enumerate(finalists, 1):
-            writer.writerow([rank, f"T{f['finalist_slot']}", f["code"], f["name"], f["assigned_station"], f["final_score"]])
+            time_sec = round((f["final_time_ms"] or 0) / 1000.0, 1)
+            writer.writerow([rank, f"T{f['finalist_slot']}", f["code"], f["name"], f["assigned_station"], f["final_score"], f"{time_sec}s"])
 
         self.set_header("Content-Type", "text/csv")
         self.set_header("Content-Disposition", "attachment; filename=EMRS_Final_Scores.csv")
@@ -1067,12 +1068,20 @@ class AdminResetCompetitionHandler(BaseHandler):
         self.write({"success": True})
 
 # =============================================================================
-# APPLICATION FACTORY
+# APPLICATION FACTORY & STATIC NO-CACHE HANDLER
 # =============================================================================
+class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
+    """Disables browser caching of static CSS/JS so updates appear immediately without manual cache clearing."""
+    def set_extra_headers(self, path):
+        self.set_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.set_header("Pragma", "no-cache")
+        self.set_header("Expires", "0")
+
 def make_app():
     settings = {
         "template_path": TEMPLATES_DIR,
         "static_path": STATIC_DIR,
+        "static_handler_class": NoCacheStaticFileHandler,
         "cookie_secret": "EMRS_QUIZ_COMPETITION_SECRET_KEY_2026_OFFLINE_LAN",
         "debug": False,
         "compiled_template_cache": False,
