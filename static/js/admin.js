@@ -43,6 +43,32 @@ function connectWebSocket() {
       if (msg.type === "FINAL_STATE_UPDATE" || msg.type === "INIT_STATE") {
         currentFinalState = msg.data || msg.final_state;
         renderFinalConsole(currentFinalState);
+
+        if (msg.event === "TIME_EXPIRED" && currentFinalState && currentFinalState.question_status === "in_progress") {
+          const passHist = currentFinalState.pass_history || [];
+          const maxPasses = currentFinalState.max_passes || 2;
+          const passingOrder = (currentFinalState.passing_order || []).slice(0, maxPasses);
+          const attempted = new Set(passHist.map(h => h.slot));
+          attempted.add(currentFinalState.active_team_slot);
+          const nextSlot = passingOrder.find(s => !attempted.has(s));
+
+          const finalistsMap = {};
+          (currentFinalState.finalists || []).forEach(f => { finalistsMap[f.finalist_slot] = f; });
+          const currTeam = finalistsMap[currentFinalState.active_team_slot];
+          const currName = currTeam ? `[T${currentFinalState.active_team_slot}] ${currTeam.name}` : `Team ${currentFinalState.active_team_slot}`;
+
+          if (nextSlot !== undefined) {
+            const nextTeam = finalistsMap[nextSlot];
+            const nextName = nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`;
+            const nextPassNum = passHist.length + 1;
+            const nextMarks = nextPassNum === 1 ? 5 : 2;
+            alert(`⏱️ TIME'S UP!\n\nTime expired for ${currName}!\nQuestion is passed to ${nextName} (Pass ${nextPassNum}/2 • ${nextMarks} Marks). Click OK to pass.`);
+            adjudicate("timeout_or_pass");
+          } else {
+            alert(`⏱️ TIME'S UP!\n\nTime expired for ${currName}!\nAll passes exhausted. Question will end with 0 marks.`);
+            adjudicate("timeout_or_pass");
+          }
+        }
       } else if (msg.type === "TIMER_TICK") {
         updateAdminTimer(msg.time_remaining);
       } else if (msg.type === "QUALIFIER_PROGRESS" || msg.type === "QUALIFIER_SUBMITTED") {
@@ -523,9 +549,16 @@ async function adjudicate(decision) {
   if (currentFinalState && (currentFinalState.question_status === "ended" || currentFinalState.is_locked)) {
     return;
   }
+  const passHist = currentFinalState ? (currentFinalState.pass_history || []) : [];
+  const maxPasses = currentFinalState ? (currentFinalState.max_passes || 2) : 2;
+  const finalistsMap = {};
+  if (currentFinalState && currentFinalState.finalists) {
+    currentFinalState.finalists.forEach(f => { finalistsMap[f.finalist_slot] = f; });
+  }
+  const currTeam = currentFinalState ? finalistsMap[currentFinalState.active_team_slot] : null;
+  const currName = currTeam ? `[T${currentFinalState.active_team_slot}] ${currTeam.name}` : (currentFinalState ? `Team ${currentFinalState.active_team_slot}` : "");
+
   if (decision === "incorrect" && currentFinalState && currentFinalState.question_status !== "ended") {
-    const passHist = currentFinalState.pass_history || [];
-    const maxPasses = currentFinalState.max_passes || 2;
     if (passHist.length < maxPasses) {
       const passingOrder = (currentFinalState.passing_order || []).slice(0, maxPasses);
       const attempted = new Set(passHist.map(h => h.slot));
@@ -542,11 +575,7 @@ async function adjudicate(decision) {
           });
         } catch (e) {}
 
-        const finalistsMap = {};
-        (currentFinalState.finalists || []).forEach(f => { finalistsMap[f.finalist_slot] = f; });
-        const currTeam = finalistsMap[currentFinalState.active_team_slot];
         const nextTeam = finalistsMap[nextSlot];
-        const currName = currTeam ? `[T${currentFinalState.active_team_slot}] ${currTeam.name}` : `Team ${currentFinalState.active_team_slot}`;
         const nextName = nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`;
         const nextPassNum = passHist.length + 1;
         const nextMarks = nextPassNum === 1 ? 5 : 2;
@@ -554,6 +583,36 @@ async function adjudicate(decision) {
 
         alert(`❌ WRONG ANSWER!\n\n${currName} gave a wrong answer.\nQuestion is passed to ${nextName} (Pass ${nextPassNum}/2 • ${nextMarks} Marks • ${passSecs}s timer).`);
       }
+    } else {
+      alert(`❌ WRONG ANSWER!\n\n${currName} gave a wrong answer.\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
+    }
+  } else if (decision === "timeout_or_pass" && currentFinalState && currentFinalState.question_status !== "ended") {
+    if (passHist.length < maxPasses) {
+      const passingOrder = (currentFinalState.passing_order || []).slice(0, maxPasses);
+      const attempted = new Set(passHist.map(h => h.slot));
+      attempted.add(currentFinalState.active_team_slot);
+      const nextSlot = passingOrder.find(s => !attempted.has(s));
+
+      if (nextSlot !== undefined) {
+        // Pause timer while alert is displayed
+        try {
+          await fetch("/api/admin/final/timer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "pause" })
+          });
+        } catch (e) {}
+
+        const nextTeam = finalistsMap[nextSlot];
+        const nextName = nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`;
+        const nextPassNum = passHist.length + 1;
+        const nextMarks = nextPassNum === 1 ? 5 : 2;
+        const passSecs = (currentFinalState.competition && currentFinalState.competition.final_pass_timer_seconds) || 5;
+
+        alert(`⏱️ PASS TO NEXT TEAM!\n\n${currName} passed / timed out.\nQuestion is passed to ${nextName} (Pass ${nextPassNum}/2 • ${nextMarks} Marks • ${passSecs}s timer).`);
+      }
+    } else {
+      alert(`⏱️ PASSES EXHAUSTED!\n\n${currName} passed / timed out.\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
     }
   }
 

@@ -88,11 +88,14 @@ async def final_timer_loop():
                 
                 # Check if timer expired
                 if state["time_remaining_seconds"] <= 0:
-                    QuizEngine.handle_final_timeout_or_pass()
+                    conn = get_db()
+                    conn.execute("UPDATE final_round_state SET timer_is_running = 0, time_remaining_seconds = 0 WHERE id = 1;")
+                    conn.commit()
+                    conn.close()
                     updated_state = QuizEngine.get_final_round_state()
                     await broadcast_ws({
                         "type": "FINAL_STATE_UPDATE",
-                        "event": "TIMEOUT",
+                        "event": "TIME_EXPIRED",
                         "sound": "BUZZER",
                         "data": updated_state
                     })

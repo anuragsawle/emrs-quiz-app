@@ -66,14 +66,28 @@ function handleWsMessage(msg) {
     }
     renderProjectorState(currentState);
 
-    // If wrong answer -> pass was triggered from Admin Console, flash stage toast banner
-    if (msg.event === "ADJUDICATE_INCORRECT" && currentState && currentState.question_status === "in_progress") {
+    // If time expired on server countdown
+    if (msg.event === "TIME_EXPIRED" && currentState && currentState.question_status === "in_progress") {
+      const nextPassInfo = getNextPassInfo(currentState);
+      if (nextPassInfo) {
+        pendingWrongPass = { decision: "timeout_or_pass" };
+        openWrongPassOverlay("timeout", nextPassInfo, null);
+      } else {
+        try {
+          alert(`⏱️ TIME'S UP!\n\nTime has expired and pass limit reached. Question ends with 0 marks.`);
+        } catch (e) {}
+        projectorAdjudicate("timeout_or_pass");
+      }
+    }
+
+    // If pass was triggered from Admin Console, flash stage toast banner
+    if ((msg.event === "ADJUDICATE_INCORRECT" || msg.event === "ADJUDICATE_TIMEOUT_OR_PASS" || msg.event === "TIMEOUT") && currentState && currentState.question_status === "in_progress") {
       if (!justConfirmedLocalWrongPass) {
         const nextTeam = currentState.active_team;
         const nextName = nextTeam ? `[T${currentState.active_team_slot}] ${nextTeam.name}` : `Team ${currentState.active_team_slot}`;
         const pCount = (currentState.pass_history || []).length;
         const nextMarks = currentState.current_marks || (pCount === 1 ? 5 : 2);
-        showProjectorPassToast(`❌ WRONG ANSWER! Passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks)`);
+        showProjectorPassToast(`⚠️ PASSED to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks)`);
       }
       justConfirmedLocalWrongPass = false;
     }
@@ -907,18 +921,47 @@ function getNextPassInfo(state) {
   };
 }
 
-function openWrongPassOverlay(info, chosenOptionLetter) {
+function openWrongPassOverlay(type, info, chosenOptionLetter) {
+  // If first param is object, handle backwards compatibility
+  if (typeof type === "object") {
+    chosenOptionLetter = info;
+    info = type;
+    type = "wrong";
+  }
   const overlay = document.getElementById("projector-wrong-pass-overlay");
+  const card = document.getElementById("wrong-pass-card");
+  const iconEl = document.getElementById("wrong-pass-icon");
+  const titleEl = document.getElementById("wrong-pass-title");
   const detailEl = document.getElementById("wrong-pass-detail");
   const nextTeamEl = document.getElementById("wrong-pass-next-team");
   const nextMetaEl = document.getElementById("wrong-pass-next-meta");
   const confirmBtn = document.getElementById("btn-confirm-wrong-pass");
 
+  const isWrong = type === "wrong";
+  if (card) {
+    card.style.borderColor = isWrong ? "#ef4444" : "#f59e0b";
+    card.style.boxShadow = isWrong ? "0 0 55px rgba(239, 68, 68, 0.55)" : "0 0 55px rgba(245, 158, 11, 0.55)";
+  }
+  if (iconEl) {
+    iconEl.innerHTML = isWrong ? "&#10060;" : "&#9201;&#65039;";
+  }
+  if (titleEl) {
+    titleEl.textContent = isWrong ? "WRONG ANSWER!" : "PASSED TO NEXT TEAM!";
+    titleEl.style.color = isWrong ? "#f87171" : "#fbbf24";
+  }
+
+  let alertText = "";
   if (detailEl) {
-    if (chosenOptionLetter) {
-      detailEl.textContent = `${info.currTeamName} selected Option ${chosenOptionLetter} — Wrong Answer! Question is passed to the next team.`;
+    if (isWrong) {
+      if (chosenOptionLetter) {
+        detailEl.textContent = `${info.currTeamName} selected Option ${chosenOptionLetter} — Wrong Answer! Question is passed to the next team.`;
+      } else {
+        detailEl.textContent = `${info.currTeamName} gave a Wrong Answer! Question is passed to the next team.`;
+      }
+      alertText = `❌ WRONG ANSWER!\n\n${detailEl.textContent}\nPassed to: ${info.nextTeamName} (Pass ${info.nextPassNum}/2 • ${info.nextMarks} Marks • ${info.passSeconds}s timer).`;
     } else {
-      detailEl.textContent = `${info.currTeamName} gave a Wrong Answer! Question is passed to the next team.`;
+      detailEl.textContent = `${info.currTeamName} timed out / passed the question! Question is passed to the next team.`;
+      alertText = `⏱️ PASS TO NEXT TEAM!\n\n${detailEl.textContent}\nPassed to: ${info.nextTeamName} (Pass ${info.nextPassNum}/2 • ${info.nextMarks} Marks • ${info.passSeconds}s timer).`;
     }
   }
   if (nextTeamEl) {
@@ -932,6 +975,13 @@ function openWrongPassOverlay(info, chosenOptionLetter) {
   }
   if (overlay) {
     overlay.style.display = "flex";
+  }
+
+  // Explicit browser alert before passing to next team
+  if (alertText) {
+    try {
+      alert(alertText);
+    } catch (e) {}
   }
 }
 
@@ -1052,8 +1102,12 @@ async function projectorSelectOption(idx) {
     } catch (e) {
       console.error("Pause before wrong pass error:", e);
     }
-    openWrongPassOverlay(nextPassInfo, letters[idx]);
+    openWrongPassOverlay("wrong", nextPassInfo, letters[idx]);
     return;
+  } else if (!isCorrect && !nextPassInfo) {
+    try {
+      alert(`❌ WRONG ANSWER!\n\n${currentState.active_team ? currentState.active_team.name : 'Team'} selected Option ${letters[idx]} — Wrong Answer!\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
+    } catch (e) {}
   }
 
   // Submit adjudication immediately if correct OR max passes exhausted
@@ -1082,11 +1136,12 @@ async function projectorAdjudicate(decision) {
   if (!currentState || !currentState.question) return;
   if (currentState.question_status === "ended" || currentState.is_locked) return;
 
+  const nextPassInfo = getNextPassInfo(currentState);
+
   if (decision === "correct") {
     if (window.quizAudio) window.quizAudio.playCorrect();
   } else if (decision === "incorrect") {
     if (window.quizAudio) window.quizAudio.playWrong();
-    const nextPassInfo = getNextPassInfo(currentState);
     if (nextPassInfo) {
       pendingWrongPass = { decision: "incorrect" };
       try {
@@ -1098,11 +1153,33 @@ async function projectorAdjudicate(decision) {
       } catch (e) {
         console.error("Pause before wrong pass error:", e);
       }
-      openWrongPassOverlay(nextPassInfo, null);
+      openWrongPassOverlay("wrong", nextPassInfo, null);
       return;
+    } else {
+      try {
+        alert(`❌ WRONG ANSWER!\n\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
+      } catch (e) {}
     }
   } else if (decision === "timeout_or_pass") {
     if (window.quizAudio) window.quizAudio.playPass();
+    if (nextPassInfo) {
+      pendingWrongPass = { decision: "timeout_or_pass" };
+      try {
+        await fetch("/api/admin/final/timer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "pause" })
+        });
+      } catch (e) {
+        console.error("Pause before pass error:", e);
+      }
+      openWrongPassOverlay("timeout", nextPassInfo, null);
+      return;
+    } else {
+      try {
+        alert(`⏱️ PASSES EXHAUSTED!\n\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
+      } catch (e) {}
+    }
   }
 
   try {

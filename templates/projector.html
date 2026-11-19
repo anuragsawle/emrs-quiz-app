@@ -247,10 +247,10 @@
 
   </main>
 
-  <!-- WRONG ANSWER -> PASS TO NEXT TEAM ALERT OVERLAY -->
+  <!-- PASS TO NEXT TEAM ALERT OVERLAY (WRONG ANSWER / PASS / TIME EXPIRED) -->
   <div id="projector-wrong-pass-overlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(2, 6, 23, 0.86); backdrop-filter:blur(6px); align-items:center; justify-content:center; padding:1.5rem;">
-    <div style="background:linear-gradient(145deg, #1e293b 0%, #0f172a 100%); border:3px solid #ef4444; box-shadow:0 0 55px rgba(239, 68, 68, 0.55); border-radius:20px; max-width:680px; width:100%; padding:2.5rem 2rem; text-align:center;">
-      <div style="font-size:4.2rem; line-height:1; margin-bottom:0.75rem;">&#10060;</div>
+    <div id="wrong-pass-card" style="background:linear-gradient(145deg, #1e293b 0%, #0f172a 100%); border:3px solid #ef4444; box-shadow:0 0 55px rgba(239, 68, 68, 0.55); border-radius:20px; max-width:680px; width:100%; padding:2.5rem 2rem; text-align:center;">
+      <div id="wrong-pass-icon" style="font-size:4.2rem; line-height:1; margin-bottom:0.75rem;">&#10060;</div>
       <div id="wrong-pass-title" style="font-size:2.3rem; font-weight:900; color:#f87171; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:0.75rem;">
         WRONG ANSWER!
       </div>
