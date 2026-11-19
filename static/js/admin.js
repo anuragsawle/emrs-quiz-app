@@ -510,6 +510,17 @@ function updateAdminTimer(seconds) {
   if (el) el.textContent = `${seconds}s`;
 }
 
+function formatFinalAnswerTime(ms) {
+  if (!ms || ms <= 0) return "0.0s";
+  const totalSec = ms / 1000.0;
+  if (totalSec < 60) {
+    return `${totalSec.toFixed(1)}s`;
+  }
+  const mins = Math.floor(totalSec / 60);
+  const remSec = (totalSec % 60).toFixed(1);
+  return `${mins}m ${remSec}s`;
+}
+
 function renderAdminFinalScoreboard(finalists) {
   const tbody = document.getElementById("admin-final-scoreboard-rows");
   if (!tbody) return;
@@ -520,17 +531,28 @@ function renderAdminFinalScoreboard(finalists) {
     : ((currentFinalState && currentFinalState.finalists) || []);
 
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:1.2rem; font-size:0.9rem;">No finalists loaded yet. Please promote 6 finalists from the Qualifier tab.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:1.2rem; font-size:0.9rem;">No finalists loaded yet. Please promote 6 finalists from the Qualifier tab.</td></tr>`;
     return;
   }
 
-  const sorted = [...list].sort((a, b) => b.final_score - a.final_score);
+  // Sort finalists:
+  // Primary: final_score DESC
+  // Tie-breaker: final_time_ms ASC (faster team wins ties)
+  // Tertiary: finalist_slot ASC
+  const sorted = [...list].sort((a, b) => 
+    (b.final_score - a.final_score) || 
+    ((a.final_time_ms || 0) - (b.final_time_ms || 0)) || 
+    (a.finalist_slot - b.finalist_slot)
+  );
+
   sorted.forEach((team, rank) => {
     const tr = document.createElement("tr");
+    const timeFormatted = team.final_time_display || formatFinalAnswerTime(team.final_time_ms);
     tr.innerHTML = `
       <td style="font-weight:700; color:#94a3b8;">#${rank + 1}</td>
       <td><strong>[T${team.finalist_slot}]</strong> ${team.name}</td>
-      <td style="font-weight:800; color:#f59e0b; font-size:1.15rem;">${team.final_score}</td>
+      <td style="font-weight:800; color:#f59e0b; font-size:1.15rem;">${team.final_score} pts</td>
+      <td style="font-weight:700; color:#38bdf8; font-size:0.95rem;">${timeFormatted}</td>
       <td>
         <button class="btn btn-secondary" style="padding:0.25rem 0.55rem; font-size:0.75rem; border-radius:4px;" onclick="promptScoreAdjust(${team.id}, '${team.name}')">&#9998; Adjust</button>
       </td>

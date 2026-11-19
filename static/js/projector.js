@@ -697,13 +697,31 @@ function renderPassTrail(state) {
   });
 }
 
+function formatAnswerTime(ms) {
+  if (!ms || ms <= 0) return "0.0s";
+  const totalSec = ms / 1000.0;
+  if (totalSec < 60) {
+    return `${totalSec.toFixed(1)}s`;
+  }
+  const mins = Math.floor(totalSec / 60);
+  const remSec = (totalSec % 60).toFixed(1);
+  return `${mins}m ${remSec}s`;
+}
+
 function renderScoreboard(finalists, winningSlot) {
   const tbody = document.getElementById("projector-scoreboard-rows");
   if (!tbody) return;
   tbody.innerHTML = "";
 
-  // Sort finalists by final score descending
-  const sorted = [...finalists].sort((a, b) => b.final_score - a.final_score);
+  // Sort finalists:
+  // Primary sort: final_score DESC (highest points first)
+  // Tie-breaker: final_time_ms ASC (lowest cumulative answer time first; faster team wins ties)
+  // Tertiary: finalist_slot ASC
+  const sorted = [...finalists].sort((a, b) => 
+    (b.final_score - a.final_score) || 
+    ((a.final_time_ms || 0) - (b.final_time_ms || 0)) || 
+    (a.finalist_slot - b.finalist_slot)
+  );
 
   sorted.forEach((team, rank) => {
     const tr = document.createElement("tr");
@@ -712,9 +730,12 @@ function renderScoreboard(finalists, winningSlot) {
       tr.style.background = "rgba(16, 185, 129, 0.15)";
     }
 
+    const timeFormatted = team.final_time_display || formatAnswerTime(team.final_time_ms);
+
     tr.innerHTML = `
       <td style="color:#94a3b8; font-weight:700;">#${rank + 1}</td>
       <td><strong>[T${team.finalist_slot}]</strong> ${team.name}</td>
+      <td class="score-time" style="text-align:center; color:#38bdf8; font-weight:700; font-size:1.02rem;">${timeFormatted}</td>
       <td class="score-pts">${team.final_score}</td>
     `;
     tbody.appendChild(tr);

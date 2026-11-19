@@ -65,6 +65,7 @@ def init_db():
         is_finalist INTEGER NOT NULL DEFAULT 0,
         finalist_slot INTEGER NULL, -- 1 to 6 (T1 to T6)
         final_score INTEGER NOT NULL DEFAULT 0,
+        final_time_ms INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
@@ -217,10 +218,21 @@ def init_db():
         correct_index INTEGER NOT NULL DEFAULT 0,
         attempted_by TEXT DEFAULT '',
         pass_history_json TEXT NOT NULL DEFAULT '[]',
+        time_taken_seconds REAL DEFAULT 0.0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+
+    # Safe migration for final_time_ms in teams & time_taken_seconds in final_question_results
+    try:
+        cursor.execute("ALTER TABLE teams ADD COLUMN final_time_ms INTEGER NOT NULL DEFAULT 0;")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE final_question_results ADD COLUMN time_taken_seconds REAL DEFAULT 0.0;")
+    except Exception:
+        pass
 
     # Ensure competition row 1 exists
     cursor.execute("SELECT COUNT(*) FROM competition WHERE id = 1;")

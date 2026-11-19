@@ -402,15 +402,17 @@ class QuizEngine:
         leaderboard = QuizEngine.get_qualifier_leaderboard()
         conn = get_db()
 
-        # Reset existing finalist slots
-        conn.execute("UPDATE teams SET is_finalist = 0, finalist_slot = NULL;")
+        # Reset existing finalist slots, scores, and answer times
+        conn.execute("UPDATE teams SET is_finalist = 0, finalist_slot = NULL, final_score = 0, final_time_ms = 0;")
 
         top_teams = leaderboard[:top_n]
         for slot, team_entry in enumerate(top_teams, 1):
             conn.execute("""
             UPDATE teams SET
                 is_finalist = 1,
-                finalist_slot = ?
+                finalist_slot = ?,
+                final_score = 0,
+                final_time_ms = 0
             WHERE id = ?;
             """, (slot, team_entry["id"]))
 
@@ -451,7 +453,7 @@ class QuizEngine:
         """Returns the 6 finalist teams ordered by their finalist slot (T1 to T6)."""
         conn = get_db()
         finalists = conn.execute("""
-            SELECT id, code, name, finalist_slot, final_score, assigned_station
+            SELECT id, code, name, finalist_slot, final_score, final_time_ms, assigned_station
             FROM teams
             WHERE is_finalist = 1
             ORDER BY finalist_slot ASC;
@@ -514,7 +516,7 @@ class QuizEngine:
         comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
         f_state = conn.execute("SELECT * FROM final_round_state WHERE id = 1;").fetchone()
         finalists = conn.execute("""
-            SELECT id, code, name, finalist_slot, final_score, assigned_station
+            SELECT id, code, name, finalist_slot, final_score, final_time_ms, assigned_station
             FROM teams
             WHERE is_finalist = 1
             ORDER BY finalist_slot ASC;
@@ -572,7 +574,22 @@ class QuizEngine:
         pass_count = len(pass_history)
         current_marks = QuizEngine.get_final_turn_marks(pass_count)
 
-        finalists_map = {f["finalist_slot"]: dict(f) for f in finalists}
+        finalists_list = []
+        for f in finalists:
+            f_dict = dict(f)
+            t_ms = f_dict.get("final_time_ms") or 0
+            f_dict["final_time_ms"] = t_ms
+            f_dict["final_time_seconds"] = round(t_ms / 1000.0, 1)
+            sec = t_ms / 1000.0
+            if sec < 60:
+                f_dict["final_time_display"] = f"{sec:.1f}s"
+            else:
+                m = int(sec // 60)
+                s = sec % 60
+                f_dict["final_time_display"] = f"{m}m {s:.1f}s"
+            finalists_list.append(f_dict)
+
+        finalists_map = {f["finalist_slot"]: f for f in finalists_list}
 
         # Calculate time remaining if timer is running
         time_remaining = f_state["time_remaining_seconds"]
@@ -617,7 +634,8 @@ class QuizEngine:
                 "selected_option": cr["selected_option"],
                 "correct_index": cr["correct_index"],
                 "attempted_by": cr["attempted_by"],
-                "pass_history": json.loads(cr["pass_history_json"]) if cr["pass_history_json"] else []
+                "pass_history": json.loads(cr["pass_history_json"]) if cr["pass_history_json"] else [],
+                "time_taken_seconds": cr["time_taken_seconds"] if "time_taken_seconds" in cr.keys() else 0.0
             }
 
         for r in rounds_summary:
@@ -666,7 +684,7 @@ class QuizEngine:
             "pass_history": pass_history,
             "full_sequence": full_sequence,
             "passing_order": allowed_passing_order,
-            "finalists": [dict(f) for f in finalists],
+            "finalists": finalists_list,
             "active_team": finalists_map.get(f_state["active_team_slot"], None)
         }
 
@@ -1075,13 +1093,24 @@ class QuizEngine:
             conn.close()
             return False, "Active finalist team not found."
 
+        comp = conn.execute("SELECT * FROM competition WHERE id = 1;").fetchone()
+        max_duration = comp["final_main_timer_seconds"] if f_state["turn_type"] == "main" else comp["final_pass_timer_seconds"]
+        now_ms = int(time.time() * 1000)
+        if f_state["timer_started_at_ms"] and f_state["timer_started_at_ms"] > 0:
+            elapsed_ms = max(200, min(max_duration * 1000, now_ms - f_state["timer_started_at_ms"]))
+        else:
+            elapsed_sec = max(0, max_duration - f_state["time_remaining_seconds"])
+            elapsed_ms = max(200, elapsed_sec * 1000)
+        time_taken_sec = round(elapsed_ms / 1000.0, 1)
+
         pass_hist = json.loads(f_state["pass_history_json"])
         pass_count = len(pass_hist)
         marks = QuizEngine.get_final_turn_marks(pass_count)
         new_score = team["final_score"] + marks
+        new_time_ms = (team["final_time_ms"] or 0) + elapsed_ms
 
-        # Update team score
-        conn.execute("UPDATE teams SET final_score = ? WHERE id = ?;", (new_score, team["id"]))
+        # Update team score and cumulative response time
+        conn.execute("UPDATE teams SET final_score = ?, final_time_ms = ? WHERE id = ?;", (new_score, new_time_ms, team["id"]))
 
         # Also persist into final_question_results (Locks question)
         q_id = f_state["current_question_id"]
@@ -1091,8 +1120,15 @@ class QuizEngine:
         if selected_option is None:
             selected_option = correct_idx
 
-        # Record pass history
-        pass_hist.append({"slot": active_slot, "team_name": team["name"], "result": "correct", "marks": marks, "selected_option": selected_option})
+        # Record pass history with response time
+        pass_hist.append({
+            "slot": active_slot,
+            "team_name": team["name"],
+            "result": "correct",
+            "marks": marks,
+            "selected_option": selected_option,
+            "time_taken_seconds": time_taken_sec
+        })
 
         # End question
         conn.execute("""
@@ -1106,17 +1142,13 @@ class QuizEngine:
         """, (active_slot, json.dumps(pass_hist)))
 
         # Also persist into final_question_results (Locks question)
-        q_id = f_state["current_question_id"]
-        q_idx = f_state["question_index"]
-        q_row = conn.execute("SELECT * FROM questions WHERE id = ?;", (q_id,)).fetchone()
-        correct_idx = q_row["correct_index"] if q_row else 0
         attempted_desc = " ➔ ".join([f"T{h['slot']} ({h['team_name']})" for h in pass_hist])
 
         conn.execute("""
         INSERT INTO final_question_results (
             question_id, question_index, status, winning_team_slot, winning_team_name,
-            awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, updated_at
-        ) VALUES (?, ?, 'ended', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, time_taken_seconds, updated_at
+        ) VALUES (?, ?, 'ended', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(question_id) DO UPDATE SET
             status = 'ended',
             winning_team_slot = excluded.winning_team_slot,
@@ -1126,20 +1158,21 @@ class QuizEngine:
             correct_index = excluded.correct_index,
             attempted_by = excluded.attempted_by,
             pass_history_json = excluded.pass_history_json,
+            time_taken_seconds = excluded.time_taken_seconds,
             updated_at = CURRENT_TIMESTAMP;
-        """, (q_id, q_idx, active_slot, team["name"], marks, correct_idx, correct_idx, attempted_desc, json.dumps(pass_hist)))
+        """, (q_id, q_idx, active_slot, team["name"], marks, selected_option, correct_idx, attempted_desc, json.dumps(pass_hist), time_taken_sec))
 
         # Score transaction
         turn_desc = "main turn" if pass_count == 0 else f"pass {pass_count}"
         conn.execute("""
         INSERT INTO score_transactions (team_id, round_type, delta_marks, resulting_score, reason)
         VALUES (?, 'final', ?, ?, ?);
-        """, (team["id"], marks, new_score, f"Q{f_state['question_index']+1} correct answer ({turn_desc}, {marks} pts)"))
+        """, (team["id"], marks, new_score, f"Q{f_state['question_index']+1} correct answer ({turn_desc}, {marks} pts, {time_taken_sec}s)"))
 
         conn.execute("""
         INSERT INTO audit_events (event_type, details)
         VALUES ('FINAL_CORRECT', ?);
-        """, (f"Team {team['name']} (T{active_slot}) awarded +{marks} for Q{f_state['question_index']+1} ({turn_desc})",))
+        """, (f"Team {team['name']} (T{active_slot}) awarded +{marks} for Q{f_state['question_index']+1} ({turn_desc}, {time_taken_sec}s)",))
 
         conn.commit()
         conn.close()
@@ -1167,8 +1200,17 @@ class QuizEngine:
         team = QuizEngine.get_team_for_slot(conn, active_slot)
         team_name = team["name"] if team else f"Team {active_slot}"
 
+        max_duration = comp["final_main_timer_seconds"] if f_state["turn_type"] == "main" else comp["final_pass_timer_seconds"]
+        now_ms = int(time.time() * 1000)
+        if f_state["timer_started_at_ms"] and f_state["timer_started_at_ms"] > 0:
+            elapsed_ms = max(200, min(max_duration * 1000, now_ms - f_state["timer_started_at_ms"]))
+        else:
+            elapsed_sec = max(0, max_duration - f_state["time_remaining_seconds"])
+            elapsed_ms = max(200, elapsed_sec * 1000)
+        time_taken_sec = round(elapsed_ms / 1000.0, 1)
+
         pass_hist = json.loads(f_state["pass_history_json"])
-        entry = {"slot": active_slot, "team_name": team_name, "result": "incorrect", "marks": 0}
+        entry = {"slot": active_slot, "team_name": team_name, "result": "incorrect", "marks": 0, "time_taken_seconds": time_taken_sec}
         if selected_option is not None:
             entry["selected_option"] = int(selected_option)
         pass_hist.append(entry)
@@ -1230,8 +1272,8 @@ class QuizEngine:
             conn.execute("""
             INSERT INTO final_question_results (
                 question_id, question_index, status, winning_team_slot, winning_team_name,
-                awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, updated_at
-            ) VALUES (?, ?, 'ended', NULL, NULL, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, time_taken_seconds, updated_at
+            ) VALUES (?, ?, 'ended', NULL, NULL, 0, ?, ?, ?, ?, 0.0, CURRENT_TIMESTAMP)
             ON CONFLICT(question_id) DO UPDATE SET
                 status = 'ended',
                 winning_team_slot = NULL,
@@ -1241,6 +1283,7 @@ class QuizEngine:
                 correct_index = excluded.correct_index,
                 attempted_by = excluded.attempted_by,
                 pass_history_json = excluded.pass_history_json,
+                time_taken_seconds = 0.0,
                 updated_at = CURRENT_TIMESTAMP;
             """, (q_id, q_idx, selected_option, correct_idx, attempted_desc, json.dumps(pass_hist)))
 
@@ -1275,8 +1318,9 @@ class QuizEngine:
         team = QuizEngine.get_team_for_slot(conn, active_slot)
         team_name = team["name"] if team else f"Team {active_slot}"
 
+        duration = comp["final_main_timer_seconds"] if f_state["turn_type"] == "main" else comp["final_pass_timer_seconds"]
         pass_hist = json.loads(f_state["pass_history_json"])
-        pass_hist.append({"slot": active_slot, "team_name": team_name, "result": "timeout", "marks": 0})
+        pass_hist.append({"slot": active_slot, "team_name": team_name, "result": "timeout", "marks": 0, "time_taken_seconds": duration})
 
         # Calculate passing sequence (only 2 passes allowed)
         max_passes = 2
@@ -1340,8 +1384,8 @@ class QuizEngine:
             conn.execute("""
             INSERT INTO final_question_results (
                 question_id, question_index, status, winning_team_slot, winning_team_name,
-                awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, updated_at
-            ) VALUES (?, ?, 'ended', NULL, NULL, 0, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
+                awarded_marks, selected_option, correct_index, attempted_by, pass_history_json, time_taken_seconds, updated_at
+            ) VALUES (?, ?, 'ended', NULL, NULL, 0, NULL, ?, ?, ?, 0.0, CURRENT_TIMESTAMP)
             ON CONFLICT(question_id) DO UPDATE SET
                 status = 'ended',
                 winning_team_slot = NULL,
@@ -1351,6 +1395,7 @@ class QuizEngine:
                 correct_index = excluded.correct_index,
                 attempted_by = excluded.attempted_by,
                 pass_history_json = excluded.pass_history_json,
+                time_taken_seconds = 0.0,
                 updated_at = CURRENT_TIMESTAMP;
             """, (q_id, q_idx, correct_idx, attempted_desc, json.dumps(pass_hist)))
 
@@ -1391,14 +1436,14 @@ class QuizEngine:
 
     @staticmethod
     def reset_final_scores():
-        """Resets all teams' Projector / Final Quiz scores to 0 and clears question lock history."""
+        """Resets all teams' Projector / Final Quiz scores and answer times to 0 and clears question lock history."""
         conn = get_db()
-        conn.execute("UPDATE teams SET final_score = 0;")
+        conn.execute("UPDATE teams SET final_score = 0, final_time_ms = 0;")
         conn.execute("DELETE FROM score_transactions WHERE round_type = 'final';")
         conn.execute("DELETE FROM final_question_results;")
         conn.execute("""
         INSERT INTO audit_events (event_type, details)
-        VALUES ('FINAL_SCORES_RESET', 'Host reset all Projector Quiz (Final Round) scores and question locks.');
+        VALUES ('FINAL_SCORES_RESET', 'Host reset all Projector Quiz (Final Round) scores, answer times, and question locks.');
         """)
         conn.commit()
         conn.close()
@@ -1411,6 +1456,16 @@ class QuizEngine:
         questions = QuizEngine.get_final_questions(conn)
         if 0 <= question_index < len(questions):
             q_id = questions[question_index]["id"]
+            res = conn.execute("SELECT * FROM final_question_results WHERE question_id = ? OR question_index = ?;", (q_id, question_index)).fetchone()
+            if res and res["winning_team_slot"] and res["awarded_marks"]:
+                w_slot = res["winning_team_slot"]
+                w_marks = res["awarded_marks"]
+                w_time_ms = int((res["time_taken_seconds"] or 0) * 1000)
+                team = conn.execute("SELECT * FROM teams WHERE finalist_slot = ? AND is_finalist = 1;", (w_slot,)).fetchone()
+                if team:
+                    rev_score = max(0, team["final_score"] - w_marks)
+                    rev_time = max(0, (team["final_time_ms"] or 0) - w_time_ms)
+                    conn.execute("UPDATE teams SET final_score = ?, final_time_ms = ? WHERE id = ?;", (rev_score, rev_time, team["id"]))
             conn.execute("DELETE FROM final_question_results WHERE question_id = ? OR question_index = ?;", (q_id, question_index))
             conn.commit()
         conn.close()
