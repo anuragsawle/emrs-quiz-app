@@ -42,25 +42,17 @@ function connectWebSocket() {
       const msg = JSON.parse(event.data);
       if (msg.type === "FINAL_STATE_UPDATE" || msg.type === "INIT_STATE") {
         currentFinalState = msg.data || msg.final_state;
+        if (msg.event === "LOAD_QUESTION" || msg.event === "LOAD_ROUND" || (msg.event && msg.event.startsWith("ADJUDICATE_"))) {
+          closeAdminPassOverlay();
+        }
         renderFinalConsole(currentFinalState);
 
-        if (msg.event === "TIMEOUT" && currentFinalState) {
+        // If countdown timer reached 0 -> Open interactive TIME OVER modal with team name
+        if ((msg.event === "TIME_OVER" || msg.event === "TIMEOUT") && currentFinalState) {
           if (currentFinalState.question_status === "in_progress") {
-            const passHist = currentFinalState.pass_history || [];
-            const prevTurn = passHist.slice(-1)[0];
-            const prevTeamName = prevTurn ? prevTurn.team_name : "Previous Team";
-            const nextTeam = currentFinalState.active_team;
-            const nextName = nextTeam ? `[T${currentFinalState.active_team_slot}] ${nextTeam.name}` : `Team ${currentFinalState.active_team_slot}`;
-            const pCount = passHist.length;
-            const nextMarks = currentFinalState.current_marks || (pCount === 1 ? 5 : 2);
-            alert(`⏱️ TIME'S UP!\n\nTime expired for ${prevTeamName}!\nQuestion has passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks • 5s timer).\n\nClick OK to start 5s timer.`);
-            fetch("/api/admin/final/timer", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "start" })
-            });
-          } else if (currentFinalState.question_status === "ended") {
-            alert(`⏱️ TIME'S UP!\n\nTime has expired and all passes are exhausted. Question has ended with 0 marks.`);
+            const nextInfo = getAdminNextPassInfo(currentFinalState);
+            pendingAdminPass = { decision: "timeout_or_pass" };
+            openAdminPassOverlay("timeout", nextInfo);
           }
         }
       } else if (msg.type === "TIMER_TICK") {
@@ -538,78 +530,223 @@ function renderAdminFinalScoreboard(finalists) {
   });
 }
 
+let pendingAdminPass = null;
+
+function getAdminNextPassInfo(state) {
+  if (!state) return null;
+  const passHist = state.pass_history || [];
+  const maxPasses = state.max_passes || 2;
+  if (passHist.length >= maxPasses) return null;
+
+  const passingOrder = (state.passing_order || []).slice(0, maxPasses);
+  const attempted = new Set(passHist.map(h => h.slot));
+  attempted.add(state.active_team_slot);
+
+  let nextSlot = null;
+  for (const slot of passingOrder) {
+    if (!attempted.has(slot)) {
+      nextSlot = slot;
+      break;
+    }
+  }
+  if (nextSlot === null) return null;
+
+  const finalistsMap = {};
+  (state.finalists || []).forEach(f => { finalistsMap[f.finalist_slot] = f; });
+  const currTeam = finalistsMap[state.active_team_slot];
+  const nextTeam = finalistsMap[nextSlot];
+  const nextPassNum = passHist.length + 1;
+  const nextMarks = nextPassNum === 1 ? 5 : 2;
+  const passSeconds = (state.competition && state.competition.final_pass_timer_seconds) || 5;
+
+  return {
+    currSlot: state.active_team_slot,
+    currTeamName: currTeam ? `[T${state.active_team_slot}] ${currTeam.name}` : `Team ${state.active_team_slot}`,
+    nextSlot,
+    nextTeamName: nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`,
+    nextPassNum,
+    nextMarks,
+    passSeconds
+  };
+}
+
+function openAdminPassOverlay(type, info) {
+  const overlay = document.getElementById("admin-pass-overlay");
+  const card = document.getElementById("admin-pass-card");
+  const iconEl = document.getElementById("admin-pass-icon");
+  const titleEl = document.getElementById("admin-pass-title");
+  const detailEl = document.getElementById("admin-pass-detail");
+  const nextTitleEl = document.getElementById("admin-pass-next-title");
+  const nextTeamEl = document.getElementById("admin-pass-next-team");
+  const nextMetaEl = document.getElementById("admin-pass-next-meta");
+  const confirmBtn = document.getElementById("btn-admin-confirm-pass");
+
+  let currName = "Current Team";
+  if (currentFinalState) {
+    const fMap = {};
+    (currentFinalState.finalists || []).forEach(f => { fMap[f.finalist_slot] = f; });
+    const c = fMap[currentFinalState.active_team_slot];
+    currName = c ? `[T${currentFinalState.active_team_slot}] ${c.name}` : `Team ${currentFinalState.active_team_slot}`;
+  }
+  if (info && info.currTeamName) {
+    currName = info.currTeamName;
+  }
+
+  const isWrong = type === "wrong";
+  if (isWrong) {
+    if (iconEl) iconEl.innerHTML = "&#10060;";
+    if (card) {
+      card.style.borderColor = "#ef4444";
+      card.style.boxShadow = "0 0 55px rgba(239, 68, 68, 0.55)";
+    }
+    if (titleEl) {
+      titleEl.textContent = "WRONG ANSWER!";
+      titleEl.style.color = "#f87171";
+    }
+
+    if (info) {
+      if (detailEl) {
+        detailEl.textContent = `${currName} gave a Wrong Answer! Question is passed to next team.`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "PASSED TO NEXT TEAM";
+      if (nextTeamEl) nextTeamEl.textContent = info.nextTeamName;
+      if (nextMetaEl) nextMetaEl.textContent = `PASS ${info.nextPassNum} OF 2 • ${info.nextMarks} MARKS • ${info.passSeconds}s TIMER`;
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `👉 Click to Pass to ${info.nextTeamName} &amp; Start Timer [Enter]`;
+        confirmBtn.className = "btn btn-warning";
+        confirmBtn.style.background = "#f59e0b";
+        confirmBtn.style.color = "#0f172a";
+        confirmBtn.style.border = "2px solid #fbbf24";
+      }
+    } else {
+      if (detailEl) {
+        detailEl.textContent = `${currName} gave a Wrong Answer! Pass limit reached (max 2 passes).`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "QUESTION ENDED";
+      if (nextTeamEl) nextTeamEl.textContent = "NO FURTHER PASSES";
+      if (nextMetaEl) nextMetaEl.textContent = "0 MARKS AWARDED • QUESTION LOCKED";
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `❌ Click to End Question (0 Marks) [Enter]`;
+        confirmBtn.className = "btn btn-danger";
+        confirmBtn.style.background = "#ef4444";
+        confirmBtn.style.color = "#ffffff";
+        confirmBtn.style.border = "2px solid #f87171";
+      }
+    }
+  } else {
+    // Timeout
+    if (iconEl) iconEl.innerHTML = "&#9201;&#65039;";
+    if (titleEl) {
+      titleEl.textContent = "TIME OVER!";
+    }
+
+    if (info) {
+      if (card) {
+        card.style.borderColor = "#f59e0b";
+        card.style.boxShadow = "0 0 55px rgba(245, 158, 11, 0.55)";
+      }
+      if (titleEl) titleEl.style.color = "#fbbf24";
+      if (detailEl) {
+        detailEl.textContent = `Time is over for ${currName}!`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "PASSED TO NEXT TEAM";
+      if (nextTeamEl) nextTeamEl.textContent = info.nextTeamName;
+      if (nextMetaEl) nextMetaEl.textContent = `PASS ${info.nextPassNum} OF 2 • ${info.nextMarks} MARKS • ${info.passSeconds}s TIMER`;
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `👉 Click to Pass to ${info.nextTeamName} &amp; Start Timer [Enter]`;
+        confirmBtn.className = "btn btn-warning";
+        confirmBtn.style.background = "#f59e0b";
+        confirmBtn.style.color = "#0f172a";
+        confirmBtn.style.border = "2px solid #fbbf24";
+      }
+    } else {
+      if (card) {
+        card.style.borderColor = "#ef4444";
+        card.style.boxShadow = "0 0 55px rgba(239, 68, 68, 0.55)";
+      }
+      if (titleEl) titleEl.style.color = "#f87171";
+      if (detailEl) {
+        detailEl.textContent = `Time is over for ${currName}! Pass limit reached (max 2 passes).`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "QUESTION ENDED";
+      if (nextTeamEl) nextTeamEl.textContent = "NO FURTHER PASSES";
+      if (nextMetaEl) nextMetaEl.textContent = "0 MARKS AWARDED • QUESTION LOCKED";
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `❌ Click to End Question (0 Marks) [Enter]`;
+        confirmBtn.className = "btn btn-danger";
+        confirmBtn.style.background = "#ef4444";
+        confirmBtn.style.color = "#ffffff";
+        confirmBtn.style.border = "2px solid #f87171";
+      }
+    }
+  }
+
+  if (overlay) {
+    overlay.style.display = "flex";
+  }
+}
+
+function closeAdminPassOverlay() {
+  pendingAdminPass = null;
+  const overlay = document.getElementById("admin-pass-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+async function confirmAdminPass() {
+  if (!pendingAdminPass) return;
+  const payload = { ...pendingAdminPass };
+  closeAdminPassOverlay();
+
+  try {
+    const res = await fetch("/api/admin/final/adjudicate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success && data.state) {
+      currentFinalState = data.state;
+      renderFinalConsole(currentFinalState);
+    } else if (data.error) {
+      alert("Error: " + data.error);
+    }
+  } catch (e) {
+    console.error("Admin confirm pass error:", e);
+  }
+}
+
 // Host Adjudication Actions
 async function adjudicate(decision) {
   if (currentFinalState && (currentFinalState.question_status === "ended" || currentFinalState.is_locked)) {
     return;
   }
-  const passHist = currentFinalState ? (currentFinalState.pass_history || []) : [];
-  const maxPasses = currentFinalState ? (currentFinalState.max_passes || 2) : 2;
-  const finalistsMap = {};
-  if (currentFinalState && currentFinalState.finalists) {
-    currentFinalState.finalists.forEach(f => { finalistsMap[f.finalist_slot] = f; });
-  }
-  const currTeam = currentFinalState ? finalistsMap[currentFinalState.active_team_slot] : null;
-  const currName = currTeam ? `[T${currentFinalState.active_team_slot}] ${currTeam.name}` : (currentFinalState ? `Team ${currentFinalState.active_team_slot}` : "");
+  const nextPassInfo = getAdminNextPassInfo(currentFinalState);
 
-  if (decision === "incorrect" && currentFinalState && currentFinalState.question_status !== "ended") {
-    if (passHist.length < maxPasses) {
-      const passingOrder = (currentFinalState.passing_order || []).slice(0, maxPasses);
-      const attempted = new Set(passHist.map(h => h.slot));
-      attempted.add(currentFinalState.active_team_slot);
-      const nextSlot = passingOrder.find(s => !attempted.has(s));
-
-      if (nextSlot !== undefined) {
-        // Pause timer while alert is displayed
-        try {
-          await fetch("/api/admin/final/timer", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "pause" })
-          });
-        } catch (e) {}
-
-        const nextTeam = finalistsMap[nextSlot];
-        const nextName = nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`;
-        const nextPassNum = passHist.length + 1;
-        const nextMarks = nextPassNum === 1 ? 5 : 2;
-        const passSecs = (currentFinalState.competition && currentFinalState.competition.final_pass_timer_seconds) || 5;
-
-        alert(`❌ WRONG ANSWER!\n\n${currName} gave a wrong answer.\nQuestion is passed to ${nextName} (Pass ${nextPassNum}/2 • ${nextMarks} Marks • ${passSecs}s timer).`);
-      }
-    } else {
-      alert(`❌ WRONG ANSWER!\n\n${currName} gave a wrong answer.\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
-    }
-  } else if (decision === "timeout_or_pass" && currentFinalState && currentFinalState.question_status !== "ended") {
-    if (passHist.length < maxPasses) {
-      const passingOrder = (currentFinalState.passing_order || []).slice(0, maxPasses);
-      const attempted = new Set(passHist.map(h => h.slot));
-      attempted.add(currentFinalState.active_team_slot);
-      const nextSlot = passingOrder.find(s => !attempted.has(s));
-
-      if (nextSlot !== undefined) {
-        // Pause timer while alert is displayed
-        try {
-          await fetch("/api/admin/final/timer", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "pause" })
-          });
-        } catch (e) {}
-
-        const nextTeam = finalistsMap[nextSlot];
-        const nextName = nextTeam ? `[T${nextSlot}] ${nextTeam.name}` : `Team ${nextSlot}`;
-        const nextPassNum = passHist.length + 1;
-        const nextMarks = nextPassNum === 1 ? 5 : 2;
-        const passSecs = (currentFinalState.competition && currentFinalState.competition.final_pass_timer_seconds) || 5;
-
-        alert(`⏱️ PASS TO NEXT TEAM!\n\n${currName} passed / timed out.\nQuestion is passed to ${nextName} (Pass ${nextPassNum}/2 • ${nextMarks} Marks • ${passSecs}s timer).`);
-      }
-    } else {
-      alert(`⏱️ PASSES EXHAUSTED!\n\n${currName} passed / timed out.\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
-    }
+  if (decision === "incorrect") {
+    pendingAdminPass = { decision: "incorrect" };
+    try {
+      await fetch("/api/admin/final/timer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pause" })
+      });
+    } catch (e) {}
+    openAdminPassOverlay("wrong", nextPassInfo);
+    return;
+  } else if (decision === "timeout_or_pass") {
+    pendingAdminPass = { decision: "timeout_or_pass" };
+    try {
+      await fetch("/api/admin/final/timer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pause" })
+      });
+    } catch (e) {}
+    openAdminPassOverlay("timeout", nextPassInfo);
+    return;
   }
 
+  // If correct answer
   try {
     const res = await fetch("/api/admin/final/adjudicate", {
       method: "POST",
@@ -617,10 +754,10 @@ async function adjudicate(decision) {
       body: JSON.stringify({ decision })
     });
     const data = await res.json();
-    if (data.success) {
+    if (data.success && data.state) {
       currentFinalState = data.state;
       renderFinalConsole(currentFinalState);
-    } else {
+    } else if (data.error) {
       alert("Error: " + data.error);
     }
   } catch (e) {
@@ -1844,6 +1981,17 @@ function setupKeyboardShortcuts() {
   window.addEventListener("keydown", (e) => {
     // Only trigger if not typing in an input or textarea
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+
+    // If Time Over / Wrong Answer modal is open, Enter or Space confirms pass to next team
+    const adminOverlay = document.getElementById("admin-pass-overlay");
+    const isAdminOverlayOpen = adminOverlay && adminOverlay.style.display !== "none" && adminOverlay.style.display !== "";
+    if (pendingAdminPass || isAdminOverlayOpen) {
+      if (e.key === "Enter" || e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        confirmAdminPass();
+        return;
+      }
+    }
 
     if (e.code === "Space") {
       e.preventDefault();

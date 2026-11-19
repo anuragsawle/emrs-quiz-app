@@ -745,6 +745,27 @@
     </div>
   </div>
 
-  <script src="/static/js/admin.js?v=20261118_mediastep"></script>
+  <!-- PASS TO NEXT TEAM ALERT OVERLAY (TIME OVER / WRONG ANSWER / PASS) -->
+  <div id="admin-pass-overlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(2, 6, 23, 0.88); backdrop-filter:blur(8px); align-items:center; justify-content:center; padding:1.5rem;">
+    <div id="admin-pass-card" style="background:linear-gradient(145deg, #1e293b 0%, #0f172a 100%); border:3px solid #f59e0b; box-shadow:0 0 55px rgba(245, 158, 11, 0.55); border-radius:20px; max-width:680px; width:100%; padding:2.5rem 2rem; text-align:center;">
+      <div id="admin-pass-icon" style="font-size:4.2rem; line-height:1; margin-bottom:0.75rem;">⏱️</div>
+      <div id="admin-pass-title" style="font-size:2.3rem; font-weight:900; color:#fbbf24; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:0.75rem;">
+        TIME OVER!
+      </div>
+      <div id="admin-pass-detail" style="font-size:1.35rem; color:#f8fafc; font-weight:700; margin-bottom:1.25rem; line-height:1.45;">
+        Time is over for [T1] Team Birsa Munda!
+      </div>
+      <div id="admin-pass-next-box" style="background:rgba(245, 158, 11, 0.16); border:2px solid #f59e0b; border-radius:12px; padding:1rem 1.25rem; margin-bottom:1.75rem;">
+        <div id="admin-pass-next-title" style="font-size:0.9rem; font-weight:800; color:#fbbf24; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:0.3rem;">PASSED TO NEXT TEAM</div>
+        <div id="admin-pass-next-team" style="font-size:1.85rem; font-weight:900; color:#ffffff;"></div>
+        <div id="admin-pass-next-meta" style="font-size:1.05rem; font-weight:700; color:#fde68a; margin-top:0.25rem;"></div>
+      </div>
+      <button id="btn-admin-confirm-pass" class="btn btn-warning" style="font-size:1.25rem; font-weight:900; padding:1rem 2.2rem; border-radius:14px; background:#f59e0b; border:2px solid #fbbf24; color:#0f172a; box-shadow:0 0 30px rgba(245, 158, 11, 0.6); cursor:pointer;" onclick="confirmAdminPass()">
+        👉 Click to Pass to Next Team &amp; Start Timer [Enter]
+      </button>
+    </div>
+  </div>
+
+  <script src="/static/js/admin.js?v=20261119_timeovermodal"></script>
 </body>
 </html>

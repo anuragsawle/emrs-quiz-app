@@ -61,37 +61,17 @@ function handleWsMessage(msg) {
     renderProjectorState(currentState);
   } else if (msg.type === "FINAL_STATE_UPDATE") {
     currentState = msg.data;
-    if (msg.event === "LOAD_QUESTION" || msg.event === "LOAD_ROUND") {
+    if (msg.event === "LOAD_QUESTION" || msg.event === "LOAD_ROUND" || (msg.event && msg.event.startsWith("ADJUDICATE_"))) {
       closeWrongPassOverlay();
     }
     renderProjectorState(currentState);
 
-    // If time expired on server countdown -> Pass to next team and alert
-    if (msg.event === "TIMEOUT" && currentState) {
+    // If countdown timer reached 0 -> Open interactive TIME OVER modal with team name
+    if ((msg.event === "TIME_OVER" || msg.event === "TIMEOUT") && currentState) {
       if (currentState.question_status === "in_progress") {
-        const passHist = currentState.pass_history || [];
-        const prevTurn = passHist.slice(-1)[0];
-        const prevTeamName = prevTurn ? prevTurn.team_name : "Previous Team";
-        const nextTeam = currentState.active_team;
-        const nextName = nextTeam ? `[T${currentState.active_team_slot}] ${nextTeam.name}` : `Team ${currentState.active_team_slot}`;
-        const pCount = passHist.length;
-        const nextMarks = currentState.current_marks || (pCount === 1 ? 5 : 2);
-        const passSecs = (currentState.competition && currentState.competition.final_pass_timer_seconds) || 5;
-
-        showProjectorPassToast(`⏱️ TIME'S UP! Passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks • ${passSecs}s Timer)`);
-        try {
-          alert(`⏱️ TIME'S UP!\n\nTime expired for ${prevTeamName}!\nQuestion has passed to ${nextName} (Pass ${pCount}/2 • ${nextMarks} Marks • ${passSecs}s timer).\n\nClick OK to start 5s timer for ${nextName}.`);
-          fetch("/api/admin/final/timer", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "start" })
-          });
-        } catch (e) {}
-      } else if (currentState.question_status === "ended") {
-        showProjectorPassToast(`⏱️ TIME'S UP! Question Ended (0 Marks)`);
-        try {
-          alert(`⏱️ TIME'S UP!\n\nTime has expired and all passes are exhausted. Question has ended with 0 marks.`);
-        } catch (e) {}
+        const nextInfo = getNextPassInfo(currentState);
+        pendingWrongPass = { decision: "timeout_or_pass" };
+        openWrongPassOverlay("timeout", nextInfo, null);
       }
     }
 
@@ -948,55 +928,118 @@ function openWrongPassOverlay(type, info, chosenOptionLetter) {
   const iconEl = document.getElementById("wrong-pass-icon");
   const titleEl = document.getElementById("wrong-pass-title");
   const detailEl = document.getElementById("wrong-pass-detail");
+  const nextTitleEl = document.getElementById("wrong-pass-next-title");
   const nextTeamEl = document.getElementById("wrong-pass-next-team");
   const nextMetaEl = document.getElementById("wrong-pass-next-meta");
   const confirmBtn = document.getElementById("btn-confirm-wrong-pass");
 
-  const isWrong = type === "wrong";
-  if (card) {
-    card.style.borderColor = isWrong ? "#ef4444" : "#f59e0b";
-    card.style.boxShadow = isWrong ? "0 0 55px rgba(239, 68, 68, 0.55)" : "0 0 55px rgba(245, 158, 11, 0.55)";
-  }
-  if (iconEl) {
-    iconEl.innerHTML = isWrong ? "&#10060;" : "&#9201;&#65039;";
-  }
-  if (titleEl) {
-    titleEl.textContent = isWrong ? "WRONG ANSWER!" : "PASSED TO NEXT TEAM!";
-    titleEl.style.color = isWrong ? "#f87171" : "#fbbf24";
-  }
-
-  let alertText = "";
-  if (detailEl) {
-    if (isWrong) {
-      if (chosenOptionLetter) {
-        detailEl.textContent = `${info.currTeamName} selected Option ${chosenOptionLetter} — Wrong Answer! Question is passed to the next team.`;
-      } else {
-        detailEl.textContent = `${info.currTeamName} gave a Wrong Answer! Question is passed to the next team.`;
-      }
-      alertText = `❌ WRONG ANSWER!\n\n${detailEl.textContent}\nPassed to: ${info.nextTeamName} (Pass ${info.nextPassNum}/2 • ${info.nextMarks} Marks • ${info.passSeconds}s timer).`;
+  let currName = "Current Team";
+  if (currentState) {
+    if (currentState.active_team && currentState.active_team.name) {
+      currName = `[T${currentState.active_team_slot}] ${currentState.active_team.name}`;
     } else {
-      detailEl.textContent = `${info.currTeamName} timed out / passed the question! Question is passed to the next team.`;
-      alertText = `⏱️ PASS TO NEXT TEAM!\n\n${detailEl.textContent}\nPassed to: ${info.nextTeamName} (Pass ${info.nextPassNum}/2 • ${info.nextMarks} Marks • ${info.passSeconds}s timer).`;
+      currName = `Team ${currentState.active_team_slot}`;
     }
   }
-  if (nextTeamEl) {
-    nextTeamEl.textContent = info.nextTeamName;
-  }
-  if (nextMetaEl) {
-    nextMetaEl.textContent = `PASS ${info.nextPassNum} OF 2 • ${info.nextMarks} MARKS • ${info.passSeconds}s TIMER`;
-  }
-  if (confirmBtn) {
-    confirmBtn.innerHTML = `&#10145;&#65039; Pass to ${info.nextTeamName} &amp; Start ${info.passSeconds}s Timer [Enter]`;
-  }
-  if (overlay) {
-    overlay.style.display = "flex";
+  if (info && info.currTeamName) {
+    currName = info.currTeamName;
   }
 
-  // Explicit browser alert before passing to next team
-  if (alertText) {
-    try {
-      alert(alertText);
-    } catch (e) {}
+  const isWrong = type === "wrong";
+  if (isWrong) {
+    if (iconEl) iconEl.innerHTML = "&#10060;";
+    if (card) {
+      card.style.borderColor = "#ef4444";
+      card.style.boxShadow = "0 0 55px rgba(239, 68, 68, 0.55)";
+    }
+    if (titleEl) {
+      titleEl.textContent = "WRONG ANSWER!";
+      titleEl.style.color = "#f87171";
+    }
+
+    if (info) {
+      if (detailEl) {
+        detailEl.textContent = chosenOptionLetter
+          ? `${currName} selected Option ${chosenOptionLetter} — Wrong Answer!`
+          : `${currName} gave a Wrong Answer!`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "PASSED TO NEXT TEAM";
+      if (nextTeamEl) nextTeamEl.textContent = info.nextTeamName;
+      if (nextMetaEl) nextMetaEl.textContent = `PASS ${info.nextPassNum} OF 2 • ${info.nextMarks} MARKS • ${info.passSeconds}s TIMER`;
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `👉 Click to Pass to ${info.nextTeamName} &amp; Start Timer [Enter]`;
+        confirmBtn.className = "btn btn-warning";
+        confirmBtn.style.background = "#f59e0b";
+        confirmBtn.style.color = "#0f172a";
+        confirmBtn.style.border = "2px solid #fbbf24";
+      }
+    } else {
+      if (detailEl) {
+        detailEl.textContent = chosenOptionLetter
+          ? `${currName} selected Option ${chosenOptionLetter} — Wrong Answer! Pass limit reached (2 passes completed).`
+          : `${currName} gave a Wrong Answer! Pass limit reached (2 passes completed).`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "QUESTION ENDED";
+      if (nextTeamEl) nextTeamEl.textContent = "NO FURTHER PASSES";
+      if (nextMetaEl) nextMetaEl.textContent = "0 MARKS AWARDED • QUESTION LOCKED";
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `❌ Click to End Question (0 Marks) [Enter]`;
+        confirmBtn.className = "btn btn-danger";
+        confirmBtn.style.background = "#ef4444";
+        confirmBtn.style.color = "#ffffff";
+        confirmBtn.style.border = "2px solid #f87171";
+      }
+    }
+  } else {
+    // Timeout or pass
+    if (iconEl) iconEl.innerHTML = "&#9201;&#65039;";
+    if (titleEl) {
+      titleEl.textContent = "TIME OVER!";
+    }
+
+    if (info) {
+      if (card) {
+        card.style.borderColor = "#f59e0b";
+        card.style.boxShadow = "0 0 55px rgba(245, 158, 11, 0.55)";
+      }
+      if (titleEl) titleEl.style.color = "#fbbf24";
+      if (detailEl) {
+        detailEl.textContent = `Time is over for ${currName}!`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "PASSED TO NEXT TEAM";
+      if (nextTeamEl) nextTeamEl.textContent = info.nextTeamName;
+      if (nextMetaEl) nextMetaEl.textContent = `PASS ${info.nextPassNum} OF 2 • ${info.nextMarks} MARKS • ${info.passSeconds}s TIMER`;
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `👉 Click to Pass to ${info.nextTeamName} &amp; Start Timer [Enter]`;
+        confirmBtn.className = "btn btn-warning";
+        confirmBtn.style.background = "#f59e0b";
+        confirmBtn.style.color = "#0f172a";
+        confirmBtn.style.border = "2px solid #fbbf24";
+      }
+    } else {
+      if (card) {
+        card.style.borderColor = "#ef4444";
+        card.style.boxShadow = "0 0 55px rgba(239, 68, 68, 0.55)";
+      }
+      if (titleEl) titleEl.style.color = "#f87171";
+      if (detailEl) {
+        detailEl.textContent = `Time is over for ${currName}! Pass limit reached (2 passes completed).`;
+      }
+      if (nextTitleEl) nextTitleEl.textContent = "QUESTION ENDED";
+      if (nextTeamEl) nextTeamEl.textContent = "NO FURTHER PASSES";
+      if (nextMetaEl) nextMetaEl.textContent = "0 MARKS AWARDED • QUESTION LOCKED";
+      if (confirmBtn) {
+        confirmBtn.innerHTML = `❌ Click to End Question (0 Marks) [Enter]`;
+        confirmBtn.className = "btn btn-danger";
+        confirmBtn.style.background = "#ef4444";
+        confirmBtn.style.color = "#ffffff";
+        confirmBtn.style.border = "2px solid #f87171";
+      }
+    }
+  }
+
+  if (overlay) {
+    overlay.style.display = "flex";
   }
 }
 
@@ -1105,8 +1148,8 @@ async function projectorSelectOption(idx) {
     if (window.quizAudio) window.quizAudio.playWrong();
   }
 
-  // If wrong answer and passes remain: pause timer & show Wrong Answer -> Pass Alert BEFORE passing!
-  if (!isCorrect && nextPassInfo) {
+  // If wrong answer: show alert modal (either passing to next team or ending with 0 marks)
+  if (!isCorrect) {
     pendingWrongPass = { decision: "incorrect", selected_option: idx };
     try {
       await fetch("/api/admin/final/timer", {
@@ -1119,16 +1162,12 @@ async function projectorSelectOption(idx) {
     }
     openWrongPassOverlay("wrong", nextPassInfo, letters[idx]);
     return;
-  } else if (!isCorrect && !nextPassInfo) {
-    try {
-      alert(`❌ WRONG ANSWER!\n\n${currentState.active_team ? currentState.active_team.name : 'Team'} selected Option ${letters[idx]} — Wrong Answer!\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
-    } catch (e) {}
   }
 
-  // Submit adjudication immediately if correct OR max passes exhausted
+  // Submit adjudication immediately if correct
   isOptionSubmitting = true;
   try {
-    const decision = isCorrect ? "correct" : "incorrect";
+    const decision = "correct";
     const res = await fetch("/api/admin/final/adjudicate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1157,44 +1196,32 @@ async function projectorAdjudicate(decision) {
     if (window.quizAudio) window.quizAudio.playCorrect();
   } else if (decision === "incorrect") {
     if (window.quizAudio) window.quizAudio.playWrong();
-    if (nextPassInfo) {
-      pendingWrongPass = { decision: "incorrect" };
-      try {
-        await fetch("/api/admin/final/timer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "pause" })
-        });
-      } catch (e) {
-        console.error("Pause before wrong pass error:", e);
-      }
-      openWrongPassOverlay("wrong", nextPassInfo, null);
-      return;
-    } else {
-      try {
-        alert(`❌ WRONG ANSWER!\n\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
-      } catch (e) {}
+    pendingWrongPass = { decision: "incorrect" };
+    try {
+      await fetch("/api/admin/final/timer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pause" })
+      });
+    } catch (e) {
+      console.error("Pause before wrong pass error:", e);
     }
+    openWrongPassOverlay("wrong", nextPassInfo, null);
+    return;
   } else if (decision === "timeout_or_pass") {
     if (window.quizAudio) window.quizAudio.playPass();
-    if (nextPassInfo) {
-      pendingWrongPass = { decision: "timeout_or_pass" };
-      try {
-        await fetch("/api/admin/final/timer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "pause" })
-        });
-      } catch (e) {
-        console.error("Pause before pass error:", e);
-      }
-      openWrongPassOverlay("timeout", nextPassInfo, null);
-      return;
-    } else {
-      try {
-        alert(`⏱️ PASSES EXHAUSTED!\n\nPass limit reached (max 2 passes). Question ends with 0 marks.`);
-      } catch (e) {}
+    pendingWrongPass = { decision: "timeout_or_pass" };
+    try {
+      await fetch("/api/admin/final/timer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pause" })
+      });
+    } catch (e) {
+      console.error("Pause before pass error:", e);
     }
+    openWrongPassOverlay("timeout", nextPassInfo, null);
+    return;
   }
 
   try {
@@ -1285,8 +1312,10 @@ function setupKeyboardShortcuts() {
   window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
 
-    // If Wrong Answer -> Pass Alert is open, Enter or Space confirms passing to next team
-    if (pendingWrongPass) {
+    // If Wrong Answer / Time Over Alert is open, Enter or Space confirms passing to next team
+    const overlay = document.getElementById("projector-wrong-pass-overlay");
+    const isOverlayOpen = overlay && overlay.style.display !== "none" && overlay.style.display !== "";
+    if (pendingWrongPass || isOverlayOpen) {
       if (e.key === "Enter" || e.key === " " || e.code === "Space") {
         e.preventDefault();
         confirmPendingWrongPass();
